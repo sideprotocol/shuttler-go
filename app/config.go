@@ -18,6 +18,7 @@ type Global struct {
 }
 
 type Bitcoin struct {
+	Chain string `toml:"chain"                         comment:"Bitcoin chains: mainnet, testnet, regtest, signet"`
 	// Bitcoin specific configuration
 	RPC         string `toml:"rpc"                           comment:"Bitcoin RPC endpoint"`
 	RPCUser     string `toml:"rpcuser"                   comment:"Bitcoin RPC user"`
@@ -42,6 +43,7 @@ func defaultConfig() *Config {
 			LogLevel: "info",
 		},
 		Bitcoin: Bitcoin{
+			Chain:       "mainnet",
 			RPC:         "localhost:8332",
 			RPCUser:     "side",
 			RPCPassword: "12345678",
