@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 
 	"github.com/cosmos/cosmos-sdk/client/keys"
@@ -33,10 +32,7 @@ const (
 func NewRootCmd(log *zap.Logger) *cobra.Command {
 	// Use a local app state instance scoped to the new root command,
 	// so that tests don't concurrently access the state.
-	a := &app.State{
-		Viper: viper.New(),
-		Log:   log,
-	}
+	a := app.NewAppState("")
 
 	// RootCmd represents the base command when called without any subcommands
 	var rootCmd = &cobra.Command{
@@ -53,7 +49,7 @@ func NewRootCmd(log *zap.Logger) *cobra.Command {
 		}
 		// Inside persistent pre-run because this takes effect after flags are parsed.
 		if a.Log == nil {
-			a.InitLogger("")
+			a.InitLogger("info")
 		}
 		return nil
 	}

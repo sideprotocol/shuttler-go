@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -18,11 +19,12 @@ type Global struct {
 }
 
 type Bitcoin struct {
-	Chain string `toml:"chain"                         comment:"Bitcoin chains: mainnet, testnet, regtest, signet"`
+	Chain string `toml:"chain"                         comment:"Bitcoin chains: mainnet, testnet, regtest, signet" default:"mainnet" validate:"oneof=mainnet testnet regtest signet"`
 	// Bitcoin specific configuration
 	RPC         string `toml:"rpc"                           comment:"Bitcoin RPC endpoint"`
 	RPCUser     string `toml:"rpcuser"                   comment:"Bitcoin RPC user"`
 	RPCPassword string `toml:"rpcpassword"           comment:"Bitcoin RPC password"`
+	Protocol    string `toml:"protocol"                  comment:"Bitcoin RPC protocol"`
 
 	Frequency int    `toml:"frequency"                  comment:"frequency of Bitcoin block polling in seconds"`
 	Sender    string `toml:"sender"                     comment:"Bitcoin sender address"`
@@ -49,6 +51,7 @@ func defaultConfig() *Config {
 			RPCPassword: "12345678",
 			Frequency:   10 * 60 * 60,
 			Sender:      "",
+			Protocol:    "http",
 		},
 		Side: Side{
 			RPC:       "http://localhost:26657",
@@ -62,6 +65,7 @@ func defaultConfig() *Config {
 const AppName = "shuttler"
 
 var DefaultHome = filepath.Join(os.Getenv("HOME"), ".shuttler")
+var CA_FILE = "rpc.cert"
 
 var DefaultConfigFilePath = DefaultHome + "/config/config.toml"
 
@@ -70,11 +74,12 @@ type ConfigBuilder struct {
 }
 
 func NewConfigBuilder(homePath string) *ConfigBuilder {
-	if homePath == "" {
-		homePath = DefaultHome
+	realpath := homePath
+	if realpath == "" {
+		realpath = DefaultHome
 	}
 	return &ConfigBuilder{
-		homePath: homePath,
+		homePath: realpath,
 	}
 }
 
@@ -118,4 +123,19 @@ func (c *ConfigBuilder) LoadConfigFile() *Config {
 func (c *ConfigBuilder) validateConfig() error {
 	// validate config
 	return nil
+}
+
+func ChainParams(chain string) *chaincfg.Params {
+	switch chain {
+	case "mainnet":
+		return &chaincfg.MainNetParams
+	case "testnet":
+		return &chaincfg.TestNet3Params
+	case "regtest":
+		return &chaincfg.RegressionNetParams
+	case "signet":
+		return &chaincfg.SigNetParams
+	default:
+		return &chaincfg.MainNetParams
+	}
 }

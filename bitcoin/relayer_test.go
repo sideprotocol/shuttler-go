@@ -3,36 +3,32 @@ package bitcoin
 import (
 	"testing"
 
-	"github.com/sideprotocol/shuttler/app"
+	"github.com/ordishs/go-bitcoin"
 )
 
 func Test_Relayer(t *testing.T) {
 
-	cfg := app.Config{
-		Global: app.Global{
-			LogLevel: "info",
-		},
-		Bitcoin: app.Bitcoin{
-			RPC:         "149.28.156.79:18332",
-			RPCUser:     "side",
-			RPCPassword: "12345678",
-			Frequency:   10 * 60 * 60,
-			Sender:      "",
-		},
-		Side: app.Side{
-			RPC:       "http://localhost:26657",
-			REST:      "http://localhost:1317",
-			Frequency: 6,
-			Sender:    "",
-		},
+	zmq := bitcoin.NewZMQ("signet", 18330)
+
+	ch := make(chan []string)
+
+	go func() {
+		for c := range ch {
+			t.Logf("%v", c)
+		}
+	}()
+
+	// if err := zmq.Subscribe("rawblock", ch); err != nil {
+	// 	t.Fatalf("%v", err)
+	// }
+
+	if err := zmq.Subscribe("hashblock", ch); err != nil {
+		t.Fatalf("%v", err)
 	}
 
-	relayer := NewBTCRelayer(cfg, nil)
-	defer relayer.Shutdown()
+	t.Log("Waiting for blocks...")
 
-	err := relayer.SyncHeader()
-	if err != nil {
-		t.Error("Failed to sync header", err)
-	}
+	waitCh := make(chan bool)
+	<-waitCh
 
 }
