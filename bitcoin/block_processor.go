@@ -4,83 +4,60 @@ import (
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/sideprotocol/shuttler/app"
 	"go.uber.org/zap"
 )
 
-type BTCRelayer struct {
+type BTCBlockProcessor struct {
 	// Bitcoin client
 	client *rpcclient.Client
 	app    *app.State
 }
 
-func NewBTCRelayer(a *app.State) *BTCRelayer {
+func NewBlockProcessor(a *app.State) *BTCBlockProcessor {
 
 	cfg := a.Config
-	ca, err := a.ReadCA() // Read CA certificate
-	if err != nil {
-		a.Log.Error("Failed to read CA certificate")
-	}
+	// ca, err := a.ReadCA() // Read CA certificate
+	// if err != nil {
+	// 	a.Log.Error("Failed to read CA certificate")
+	// }
 
 	// Connect to local bitcoin core RPC server using HTTP POST mode.
 	connCfg := &rpcclient.ConnConfig{
 		Host:         cfg.Bitcoin.RPC,
 		User:         cfg.Bitcoin.RPCUser,
 		Pass:         cfg.Bitcoin.RPCPassword,
-		HTTPPostMode: false, // Bitcoin core only supports HTTP POST mode
-		DisableTLS:   false, // Bitcoin core does not provide TLS by default
-		Endpoint:     "wss", // Endpoint: ws, wss, http, https
-		Certificates: ca,
-	}
-
-	ntfnHandlers := rpcclient.NotificationHandlers{
-		OnFilteredBlockConnected: func(height int32, header *wire.BlockHeader, txns []*btcutil.Tx) {
-			a.Log.Info("Block connected: %v (%d) %v",
-				zap.String("hash", header.BlockHash().String()),
-				zap.Int32("height", height),
-				zap.Time("timestamp", header.Timestamp),
-			)
-		},
-		OnFilteredBlockDisconnected: func(height int32, header *wire.BlockHeader) {
-			a.Log.Info("Block disconnected: %v (%d) %v",
-				zap.String("hash", header.BlockHash().String()),
-				zap.Int32("height", height),
-				zap.Time("timestamp", header.Timestamp),
-			)
-		},
+		HTTPPostMode: true, // Bitcoin core only supports HTTP POST mode
+		DisableTLS:   true, // Bitcoin core does not provide TLS by default
+		// Endpoint:     "wss", // Endpoint: ws, wss, http, https
+		// Certificates: ca,
 	}
 
 	// not supported in HTTP POST mode.
-	client, err := rpcclient.New(connCfg, &ntfnHandlers)
+	client, err := rpcclient.New(connCfg, nil)
 	if err != nil {
 		println(err)
 		panic("Failed to create new client")
 	}
 	// defer client.Shutdown()
-	return &BTCRelayer{
+	return &BTCBlockProcessor{
 		client: client,
 		app:    a,
 	}
 }
 
-func (b *BTCRelayer) SyncHeader() error {
+func (b *BTCBlockProcessor) SyncHeader(new_hash string) error {
 
-	height, err := b.client.GetBlockCount()
-
+	hash, err := chainhash.NewHashFromStr(new_hash)
 	if err != nil {
 		return err
 	}
-
-	println("Best Block Height", height)
-
-	hash, err := b.client.GetBlockHash(height)
-	if err != nil {
-		return err
-	}
+	// info,err := b.client.GetBlockChainInfo()
 
 	block, err := b.client.GetBlock(hash)
+	// block.
 	if err != nil {
 		return err
 	}
@@ -110,6 +87,8 @@ func (b *BTCRelayer) SyncHeader() error {
 	bc := btcutil.NewBlock(block)
 	powLimit := chaincfg.MainNetParams.PowLimit
 
+	b.app.Log.Info("Block height", zap.Int32("height", bc.Height()))
+
 	// Verify the block header
 	err = blockchain.CheckProofOfWork(bc, powLimit)
 	if err != nil {
@@ -121,7 +100,7 @@ func (b *BTCRelayer) SyncHeader() error {
 	return nil
 }
 
-func (b *BTCRelayer) Shutdown() {
+func (b *BTCBlockProcessor) Shutdown() {
 	b.client.Shutdown()
 	println("Bitcoin relayer shutdown")
 }

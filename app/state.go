@@ -19,10 +19,11 @@ type State struct {
 
 	Viper *viper.Viper
 
-	HomePath    string
-	Debug       bool
-	Config      *Config
-	TrustHeader wire.BlockHeader
+	HomePath             string
+	Debug                bool
+	Config               *Config
+	TrustHeader          wire.BlockHeader
+	LastBitcoinBlockHash string
 }
 
 // NewState creates a new State object.

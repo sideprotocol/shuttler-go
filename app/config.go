@@ -26,6 +26,9 @@ type Bitcoin struct {
 	RPCPassword string `toml:"rpcpassword"           comment:"Bitcoin RPC password"`
 	Protocol    string `toml:"protocol"                  comment:"Bitcoin RPC protocol"`
 
+	ZMQHost string `toml:"zmqhost"                           comment:"Bitcoin ZMQ endpoint"`
+	ZMQPort int    `toml:"zmqport"                      comment:"Bitcoin ZMQ port"`
+
 	Frequency int    `toml:"frequency"                  comment:"frequency of Bitcoin block polling in seconds"`
 	Sender    string `toml:"sender"                     comment:"Bitcoin sender address"`
 }
