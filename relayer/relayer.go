@@ -13,21 +13,23 @@ import (
 
 func Start(a *app.State) {
 
-	// Create a new ZMQ client
-	// Subscribe to the hashblock topic
+	// Create a new ZMQ client & RPC client
 	host := a.Config.Bitcoin.ZMQHost
 	port := a.Config.Bitcoin.ZMQPort
 	if host == "" || port == 0 {
 		panic("ZMQ host or port not set")
 	}
-	zmq := zmqclient.NewZMQ(host, port)
 	err := a.InitRPC()
 	if err != nil {
 		panic(err)
 	}
 
-	btcChan := make(chan []string)
+	// 1. Sync the light client with the bitcoin network
+	a.FastSyncLightClient()
 
+	// 2. Subscribe to the latest block
+	zmq := zmqclient.NewZMQ(host, port)
+	btcChan := make(chan []string)
 	if err := zmq.Subscribe("hashblock", btcChan); err != nil {
 		a.Log.Fatal("%v", zap.Error(err))
 	}
@@ -36,11 +38,6 @@ func Start(a *app.State) {
 	// Setup a channel to listen for an interrupt or SIGTERM signal.
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-	// Process messages
-	// btcProcessor := btc.NewBlockProcessor(a)
-	//
-	a.FastSyncLightClient()
 
 	for {
 		select {
