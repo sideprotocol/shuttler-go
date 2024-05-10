@@ -246,7 +246,18 @@ func (a *State) OnNewBtcBlock(c []string) {
 
 func (a *State) SubmitBlock(blocks []*zmqclient.BlockHeader) {
 	// Submit block to the sidechain
-	a.Log.Debug("Block submitted", zap.Any("blocks", blocks))
+	for i, block := range blocks {
+		a.Log.Debug("Block submitted",
+			zap.Int("i", i),
+			zap.String("P", block.PreviousBlockHash),
+			zap.Uint64("Height", block.Height),
+			zap.Uint64("v", block.Version),
+		)
+		a.Log.Debug("Block submitted",
+			zap.String("H", block.Hash),
+			zap.String("bits", block.Bits),
+		)
+	}
 }
 
 func (a *State) ReadCA() ([]byte, error) {
