@@ -21,13 +21,13 @@ func Start(a *app.State) {
 		panic("ZMQ host or port not set")
 	}
 	zmq := zmqclient.NewZMQ(host, port)
-	client, _ := zmqclient.New("signet", 18332, a.Config.Bitcoin.RPCUser, a.Config.Bitcoin.RPCPassword, false)
+	err := a.InitRPC()
+	if err != nil {
+		panic(err)
+	}
 
 	btcChan := make(chan []string)
 
-	// if err := zmq.Subscribe("rawblock", btcChan); err != nil {
-	// 	a.Log.Fatal("%v", zap.Error(err))
-	// }
 	if err := zmq.Subscribe("hashblock", btcChan); err != nil {
 		a.Log.Fatal("%v", zap.Error(err))
 	}
@@ -40,108 +40,18 @@ func Start(a *app.State) {
 	// Process messages
 	// btcProcessor := btc.NewBlockProcessor(a)
 	//
-	FastSyncLightClient(a, client)
+	a.FastSyncLightClient()
 
 	for {
 		select {
 		case c := <-btcChan:
-			OnNewBtcBlock(a, client, c)
+			a.OnNewBtcBlock(c)
 		case <-sigs:
 			a.Log.Info("Exiting...")
 			return
 		}
 	}
 	// return nil
-}
-
-// Sync the light client with the bitcoin network
-func FastSyncLightClient(a *app.State, client *zmqclient.Bitcoind) {
-	// Get the current height from the sidechain
-	// TODO: Implement this later
-	currentHeight := 2813800
-	for {
-		hash, err := client.GetBlockHash(currentHeight)
-		if err != nil {
-			a.Log.Error("Failed to process block hash", zap.Error(err))
-			return
-		}
-
-		if hash == a.LastBitcoinBlockHash {
-			a.Log.Info("Reached the last block")
-			return
-		}
-
-		block, err := client.GetBlockHeader(hash)
-		if err != nil {
-			a.Log.Error("Failed to process block", zap.Error(err))
-			return
-		}
-
-		if a.LastBitcoinBlockHash != "" && a.LastBitcoinBlockHash != block.PreviousBlockHash {
-			a.Log.Error("There must be a forked branch", zap.String("lasthash", a.LastBitcoinBlockHash), zap.String("previoushash", block.PreviousBlockHash))
-			return
-		}
-
-		// a.Log.Info("Submit Block to Sidechain", zap.String("hash", block.Hash))
-		// Submit block to sidechain
-		// a.SubmitBlock(block)
-		a.Log.Debug("Block submitted",
-			zap.Uint64("Height", block.Height),
-			zap.String("PreviousBlockHash", block.PreviousBlockHash),
-			zap.String("MerkleRoot", block.MerkleRoot),
-			zap.Uint64("Nonce", block.Nonce),
-			zap.String("Bits", block.Bits),
-			// zap.Int64("Version", block.Version),
-			zap.Uint64("Time", block.Time),
-			zap.Uint64("TxCount", block.NTx),
-		)
-
-		a.LastBitcoinBlockHash = block.Hash
-
-		besthash, err := client.GetBestBlockHash()
-		if besthash == block.Hash || err != nil {
-			a.Log.Info("Reached the best block")
-			return
-		}
-
-		currentHeight++
-	}
-}
-
-func OnNewBtcBlock(a *app.State, client *zmqclient.Bitcoind, c []string) {
-	hash := c[1]
-
-	a.Log.Info("Received block", zap.String("hash", hash))
-	block, err := client.GetBlockHeader(hash)
-	if err != nil {
-		a.Log.Error("Failed to process block", zap.Error(err))
-		return
-	}
-
-	if a.LastBitcoinBlockHash != block.PreviousBlockHash {
-		a.Log.Error("Light Client is out of sync or a forked branch detected",
-			zap.Uint64("height", block.Height),
-			zap.String("lasthash", a.LastBitcoinBlockHash),
-			zap.String("previoushash", block.PreviousBlockHash))
-		return
-	}
-
-	// a.Log.Info("Submit Block to Sidechain", zap.String("hash", hash))
-	// Submit block to sidechain
-	// a.SubmitBlock(block)
-	a.Log.Debug("Block submitted",
-		zap.Uint64("Height", block.Height),
-		zap.String("PreviousBlockHash", block.PreviousBlockHash),
-		zap.String("MerkleRoot", block.MerkleRoot),
-		zap.Uint64("Nonce", block.Nonce),
-		zap.String("Bits", block.Bits),
-		// zap.Int64("Version", block.Version),
-		zap.Uint64("Time", block.Time),
-		zap.Uint64("TxCount", block.NTx),
-	)
-
-	a.LastBitcoinBlockHash = hash
-
 }
 
 func FetchTxns(a *app.State, client *zmqclient.Bitcoind) {
