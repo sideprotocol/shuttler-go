@@ -107,6 +107,13 @@ func (c *ConfigBuilder) InitConfig() *Config {
 }
 
 func (c *ConfigBuilder) LoadConfigFile() *Config {
+
+	// check if config file exists
+	_, err := os.Stat(c.ConfigFilePath())
+	if os.IsNotExist(err) {
+		return c.InitConfig()
+	}
+
 	in, err := os.ReadFile(c.ConfigFilePath())
 	if err != nil {
 		panic(err)
