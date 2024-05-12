@@ -209,6 +209,7 @@ func (a *State) OnNewBtcBlock(c []string) {
 		}
 
 		a.SubmitBlock(newBlocks)
+		return
 	}
 
 	// A forked branch detected
