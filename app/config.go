@@ -5,6 +5,14 @@ import (
 	"path/filepath"
 
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/cosmos/cosmos-sdk/client/tx"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -40,6 +48,8 @@ type Side struct {
 
 	Frequency int    `toml:"frequency"                  comment:"frequency of Side block polling in	seconds"`
 	Sender    string `toml:"sender"                     comment:"Side sender address"`
+	ChainID   string `toml:"chain-id"                  comment:"Side chain ID"`
+	Gas       uint64 `toml:"gas"                       comment:"Side chain gas"`
 }
 
 func defaultConfig() *Config {
@@ -61,16 +71,21 @@ func defaultConfig() *Config {
 			REST:      "http://localhost:1317",
 			Frequency: 6,
 			Sender:    "",
+			ChainID:   "sidechain-1",
 		},
 	}
 }
 
-const AppName = "shuttler"
+const (
+	AppName             = "shuttler"
+	InternalKeyringName = "side"
+)
 
-var DefaultHome = filepath.Join(os.Getenv("HOME"), ".shuttler")
-var CA_FILE = "rpc.cert"
-
-var DefaultConfigFilePath = DefaultHome + "/config/config.toml"
+var (
+	DefaultHome           = filepath.Join(os.Getenv("HOME"), ".shuttler")
+	CA_FILE               = "rpc.cert"
+	DefaultConfigFilePath = DefaultHome + "/config/config.toml"
+)
 
 type ConfigBuilder struct {
 	homePath string
@@ -103,6 +118,20 @@ func (c *ConfigBuilder) InitConfig() *Config {
 	if err != nil {
 		panic(err)
 	}
+
+	hdPath, algo := getKeyType("segwit")
+
+	// init keyring
+	cdc := getCodec()
+	kb, err := keyring.New(AppName, keyring.BackendTest, c.homePath+"/keyring", nil, cdc)
+	record, mnemonic, err := kb.NewMnemonic(InternalKeyringName, keyring.English, hdPath, "", algo)
+	if err != nil {
+		panic(err)
+	}
+
+	println("mnemonic: ", mnemonic)
+	println("record: ", record)
+
 	return cfg
 }
 
@@ -126,6 +155,24 @@ func (c *ConfigBuilder) LoadConfigFile() *Config {
 	return cfg
 }
 
+func (c *ConfigBuilder) defaultTxFactory() *tx.Factory {
+
+	cdc := getCodec()
+	//create a Keyring
+	kb, err := keyring.New("shuttler", keyring.BackendTest, c.homePath+"/keyring", nil, cdc)
+	if err != nil {
+		panic(err)
+	}
+
+	f := tx.Factory{}
+	f.WithChainID("sidechain-1")
+	f.WithFromName("side")
+	f.WithGas(200000)
+	f.WithKeybase(kb)
+	f.WithSignMode(signing.SignMode_SIGN_MODE_DIRECT)
+	return &f
+}
+
 // func (c *ConfigBuilder) RuntimeConfig(ctx context.Context, a *appState) (*Config, error) {
 // 	return c, nil
 // }
@@ -133,6 +180,21 @@ func (c *ConfigBuilder) LoadConfigFile() *Config {
 func (c *ConfigBuilder) validateConfig() error {
 	// validate config
 	return nil
+}
+
+func getCodec() codec.Codec {
+	registry := codectypes.NewInterfaceRegistry()
+	cryptocodec.RegisterInterfaces(registry)
+	return codec.NewProtoCodec(registry)
+}
+
+func getKeyType(algo string) (string, keyring.SignatureAlgo) {
+	switch algo {
+	case "segwit":
+		return "m/84'/0'/0'/0/0", hd.SegWit
+	default:
+		return sdk.FullFundraiserPath, hd.Secp256k1
+	}
 }
 
 func ChainParams(chain string) *chaincfg.Params {

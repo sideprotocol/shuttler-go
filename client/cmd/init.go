@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/pelletier/go-toml/v2"
 	"github.com/sideprotocol/shuttler/app"
 	"github.com/spf13/cobra"
 )
@@ -19,14 +18,9 @@ func NewInitCommand() *cobra.Command {
 			}
 
 			cb := app.NewConfigBuilder(home)
-			cfg := cb.InitConfig()
+			cb.InitConfig()
 			println("Configuration file created at: ", cb.ConfigFilePath())
 
-			out, err := toml.Marshal(*cfg)
-			if err != nil {
-				return err
-			}
-			println(string(out))
 			return nil
 		},
 	}

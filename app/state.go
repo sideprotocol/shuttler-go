@@ -2,15 +2,28 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/btcsuite/btcd/wire"
+	"github.com/cosmos/cosmos-sdk/client/tx"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+
+	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	zmqclient "github.com/ordishs/go-bitcoin"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
+	auth "github.com/cosmos/cosmos-sdk/x/auth/types"
+	btclightclient "github.com/sideprotocol/side/x/btclightclient/types"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // AppState is the modifiable state of the application.
@@ -31,6 +44,12 @@ type State struct {
 	LastBitcoinHeader *zmqclient.BlockHeader
 	Synced            bool
 	rpc               *zmqclient.Bitcoind
+
+	// Cosmos Config
+	TxFactory       *tx.Factory
+	GRpcConn        *grpc.ClientConn
+	grpcQueryClient *btclightclient.QueryClient
+	txServiceClient txtypes.ServiceClient
 }
 
 // NewState creates a new State object.
@@ -39,27 +58,132 @@ func NewAppState(home string) *State {
 	if h == "" {
 		h = DefaultHome
 	}
+	// Set up a connection to the server.
+	conn, err := grpc.Dial("localhost:9090", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	if err != nil {
+		log.Fatalf("did not connect: %v", err)
+	}
+	defer conn.Close()
+	// Create a transaction service client
+	txclient := txtypes.NewServiceClient(conn)
+	queryClient := btclightclient.NewQueryClient(conn)
 	return &State{
-		Viper:    viper.New(),
-		HomePath: h,
-		Synced:   false,
+		Viper:           viper.New(),
+		HomePath:        h,
+		Synced:          false,
+		GRpcConn:        conn,
+		grpcQueryClient: &queryClient,
+		txServiceClient: txclient,
 	}
 }
 
-func (a *State) InitLogger(configLogLevel string) error {
-	// logLevel := a.Viper.GetString("log-level")
-	// if a.Viper.GetBool("debug") {
-	// 	logLevel = "debug"
-	// } else if logLevel == "" {
-	// 	logLevel = configLogLevel
-	// }
-	// log, err := newRootLogger(a.Viper.GetString("log-format"), logLevel)
-	// if err != nil {
-	// 	return err
-	// }
+// Query Cosmos Account Auth Info
+func (a *State) queryAccountInfo() (*auth.BaseAccount, error) {
 
+	record, err := a.TxFactory.Keybase().Key(InternalKeyringName)
+	if err != nil {
+		return nil, err
+	}
+	address, err := record.GetAddress()
+	if err != nil {
+		return nil, err
+	}
+
+	// Query account info
+	query := auth.NewQueryClient(a.GRpcConn)
+	res, err := query.AccountInfo(context.Background(), &auth.QueryAccountInfoRequest{Address: address.String()})
+	if err != nil {
+		return nil, err
+	}
+	return res.Info, nil
+
+}
+
+// SendTx sends a transaction to the sidechain
+func (a *State) SendSideTx(msg sdk.Msg) error {
+	// Encode the message
+	// create a new encoding config
+	encodingConfig := MakeEncodingConfig()
+	txBuilder := encodingConfig.TxConfig.NewTxBuilder()
+	txBuilder.SetMsgs(msg)
+
+	// Sign the transaction
+	// Query Account info
+	account, err := a.queryAccountInfo()
+	if err != nil {
+		return err
+	}
+	// Create Signing Factory
+	factory := a.TxFactory
+	factory.WithAccountNumber(account.AccountNumber)
+	factory.WithSequence(account.Sequence)
+
+	err = tx.Sign(*factory, InternalKeyringName, txBuilder, true)
+	if err != nil {
+		log.Fatalf("failed to sign tx: %v", err)
+		return err
+	}
+
+	txBytes, err := encodingConfig.TxConfig.TxEncoder()(txBuilder.GetTx())
+	if err != nil {
+		log.Fatalf("failed to encode tx: %v", err)
+		return err
+	}
+
+	// Broadcast the transaction
+	res, err := a.txServiceClient.BroadcastTx(context.Background(), &txtypes.BroadcastTxRequest{
+		TxBytes: txBytes,
+		Mode:    txtypes.BroadcastMode_BROADCAST_MODE_BLOCK, // Change as needed
+	})
+	if err != nil {
+		log.Fatalf("failed to broadcast tx: %v", err)
+		return err
+	}
+
+	fmt.Printf("Transaction broadcasted with TX hash: %s\n", res.TxResponse.TxHash)
+	return nil
+}
+
+// Send Update Senders Request
+func (a *State) SendUpdateSendersRequest(senders []string) error {
+	msg := &btclightclient.MsgUpdateSendersRequest{
+		Sender:  "",
+		Senders: senders,
+	}
+	return a.SendSideTx(msg)
+}
+
+// Send Submit Block Header Request
+func (a *State) SendSubmitBlockHeaderRequest(headers []*btclightclient.BlockHeader) error {
+	msg := &btclightclient.MsgSubmitBlockHeaderRequest{
+		Sender:       "",
+		BlockHeaders: headers,
+	}
+	return a.SendSideTx(msg)
+}
+
+func (a *State) InitLogger(configLogLevel string) error {
 	a.Log = zap.Must(zap.NewDevelopment())
 	return nil
+}
+
+func (a *State) initTxFactory() {
+
+	cdc := getCodec()
+	//create a Keyring
+	kb, err := keyring.New(AppName, keyring.BackendTest, a.HomePath+"/keyring", nil, cdc)
+	if err != nil {
+		panic(err)
+	}
+
+	f := tx.Factory{}
+	f.WithChainID(a.Config.Side.ChainID)
+	f.WithFromName(InternalKeyringName)
+	f.WithGas(a.Config.Side.Gas)
+	f.WithKeybase(kb)
+	f.WithSignMode(signing.SignMode_SIGN_MODE_DIRECT)
+
+	a.TxFactory = &f
 }
 
 // loadConfigFile reads config file into a.Config if file is present.
@@ -68,12 +192,15 @@ func (a *State) LoadConfigFile(ctx context.Context) error {
 	cb := NewConfigBuilder(a.HomePath)
 	// unmarshall them into the wrapper struct
 	cfg := cb.LoadConfigFile()
+	a.Config = cfg
 
 	if a.Log == nil {
 		a.InitLogger(cfg.Global.LogLevel)
 	}
 
-	a.Config = cfg
+	if a.TxFactory == nil {
+		a.initTxFactory()
+	}
 
 	return nil
 }
@@ -105,6 +232,10 @@ func (a *State) FastSyncLightClient() {
 	// TODO: Implement this later
 	bestHash, _ := client.GetBestBlockHash()
 	bestHeader, _ := client.GetBlockHeader(bestHash)
+
+	a.Log.Info("Start syncing light client", zap.Uint64("height", bestHeader.Height))
+	a.Log.Debug("Best block: ", zap.Any("header", bestHeader))
+
 	currentHeight := bestHeader.Height - 10
 	for {
 		hash, err := client.GetBlockHash(int(currentHeight))
