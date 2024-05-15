@@ -5,21 +5,20 @@ import (
 	"path/filepath"
 
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/pelletier/go-toml/v2"
 )
 
 type Config struct {
-	Global  Global  `toml:"global"`
-	Bitcoin Bitcoin `toml:"bitcoin"`
-	Side    Side    `toml:"side"`
+	Global      Global  `toml:"global"`
+	Bitcoin     Bitcoin `toml:"bitcoin"`
+	Side        Side    `toml:"side"`
+	FromAddress string  `toml:"from-address" comment:"from address for the transaction"`
 }
 
 type Global struct {
@@ -43,6 +42,7 @@ type Bitcoin struct {
 
 type Side struct {
 	// Side specific configuration
+	GRPC string `toml:"grpc"                          comment:"Side gRPC endpoint"`
 	RPC  string `toml:"rpc"                           comment:"Side RPC endpoint"`
 	REST string `toml:"rest"                          comment:"Side REST endpoint"`
 
@@ -59,19 +59,22 @@ func defaultConfig() *Config {
 		},
 		Bitcoin: Bitcoin{
 			Chain:       "mainnet",
-			RPC:         "localhost:8332",
+			RPC:         "signet:18332",
 			RPCUser:     "side",
 			RPCPassword: "12345678",
 			Frequency:   10 * 60 * 60,
 			Sender:      "",
 			Protocol:    "http",
+			ZMQHost:     "signet",
+			ZMQPort:     18330,
 		},
 		Side: Side{
 			RPC:       "http://localhost:26657",
 			REST:      "http://localhost:1317",
+			GRPC:      "localhost:9090",
 			Frequency: 6,
 			Sender:    "",
-			ChainID:   "sidechain-1",
+			ChainID:   "S2-testnet-1",
 		},
 	}
 }
@@ -96,6 +99,7 @@ func NewConfigBuilder(homePath string) *ConfigBuilder {
 	if realpath == "" {
 		realpath = DefaultHome
 	}
+
 	return &ConfigBuilder{
 		homePath: realpath,
 	}
@@ -107,6 +111,29 @@ func (c *ConfigBuilder) ConfigFilePath() string {
 
 func (c *ConfigBuilder) InitConfig() *Config {
 	cfg := defaultConfig()
+
+	// Set the sender address
+	c.setKeyringPrefix(cfg.Bitcoin.Chain)
+	hdPath, algo := getKeyType("segwit")
+
+	// init keyring
+	cdc := getCodec()
+	kb, err := keyring.New(AppName, keyring.BackendTest, c.homePath, nil, cdc)
+	if err != nil {
+		panic(err)
+	}
+	record, mnemonic, err := kb.NewMnemonic(InternalKeyringName, keyring.English, hdPath, "", algo)
+	if err != nil {
+		panic(err)
+	}
+	accAddr, err := record.GetAddress()
+	if err != nil {
+		panic(err)
+	}
+	cfg.Side.Sender = accAddr.String()
+
+	println("mnemonic: ", mnemonic)
+
 	out, err := toml.Marshal(cfg)
 	if err != nil {
 		panic(err)
@@ -118,19 +145,6 @@ func (c *ConfigBuilder) InitConfig() *Config {
 	if err != nil {
 		panic(err)
 	}
-
-	hdPath, algo := getKeyType("segwit")
-
-	// init keyring
-	cdc := getCodec()
-	kb, err := keyring.New(AppName, keyring.BackendTest, c.homePath+"/keyring", nil, cdc)
-	record, mnemonic, err := kb.NewMnemonic(InternalKeyringName, keyring.English, hdPath, "", algo)
-	if err != nil {
-		panic(err)
-	}
-
-	println("mnemonic: ", mnemonic)
-	println("record: ", record)
 
 	return cfg
 }
@@ -152,30 +166,22 @@ func (c *ConfigBuilder) LoadConfigFile() *Config {
 	if err != nil {
 		panic(err)
 	}
+	c.setKeyringPrefix(cfg.Bitcoin.Chain)
 	return cfg
 }
 
-func (c *ConfigBuilder) defaultTxFactory() *tx.Factory {
-
-	cdc := getCodec()
-	//create a Keyring
-	kb, err := keyring.New("shuttler", keyring.BackendTest, c.homePath+"/keyring", nil, cdc)
-	if err != nil {
-		panic(err)
+// Set Prefix for the keyring according to the bitcoin chain
+func (c *ConfigBuilder) setKeyringPrefix(chain string) {
+	// set keyring prefix
+	// Set prefix for sender address to bech32
+	switch chain {
+	case "mainnet":
+		sdk.GetConfig().SetBech32PrefixForAccount("bc", "bcpub")
+	case "testnet":
+		sdk.GetConfig().SetBech32PrefixForAccount("tb", "tbpub")
 	}
-
-	f := tx.Factory{}
-	f.WithChainID("sidechain-1")
-	f.WithFromName("side")
-	f.WithGas(200000)
-	f.WithKeybase(kb)
-	f.WithSignMode(signing.SignMode_SIGN_MODE_DIRECT)
-	return &f
+	sdk.GetConfig().Seal()
 }
-
-// func (c *ConfigBuilder) RuntimeConfig(ctx context.Context, a *appState) (*Config, error) {
-// 	return c, nil
-// }
 
 func (c *ConfigBuilder) validateConfig() error {
 	// validate config

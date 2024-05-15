@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/cosmos/cosmos-sdk/client/tx"
@@ -24,6 +25,10 @@ import (
 	btclightclient "github.com/sideprotocol/side/x/btclightclient/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+)
+
+const (
+	DefaultTimeout = 100 * time.Second
 )
 
 // AppState is the modifiable state of the application.
@@ -46,9 +51,9 @@ type State struct {
 	rpc               *zmqclient.Bitcoind
 
 	// Cosmos Config
-	TxFactory       *tx.Factory
+	TxFactory       tx.Factory
 	GRpcConn        *grpc.ClientConn
-	grpcQueryClient *btclightclient.QueryClient
+	grpcQueryClient btclightclient.QueryClient
 	txServiceClient txtypes.ServiceClient
 }
 
@@ -58,40 +63,62 @@ func NewAppState(home string) *State {
 	if h == "" {
 		h = DefaultHome
 	}
-	// Set up a connection to the server.
-	conn, err := grpc.Dial("localhost:9090", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	defer conn.Close()
-	// Create a transaction service client
-	txclient := txtypes.NewServiceClient(conn)
-	queryClient := btclightclient.NewQueryClient(conn)
 	return &State{
-		Viper:           viper.New(),
-		HomePath:        h,
-		Synced:          false,
-		GRpcConn:        conn,
-		grpcQueryClient: &queryClient,
-		txServiceClient: txclient,
+		Viper:    viper.New(),
+		HomePath: h,
+		Synced:   false,
 	}
+}
+
+// Initialize the application state
+// This function is called by the root command before executing any subcommands.
+// and should not be called for `init` and `version` commands.
+func (a *State) Init() error {
+	// Load the configuration file
+	err := a.loadConfigFile(context.Background())
+	if err != nil {
+		return err
+	}
+
+	// Set up a connection to the server.
+	conn, err := grpc.Dial(a.Config.Side.GRPC, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	if err != nil {
+		return err
+	}
+
+	// Create a transaction service client
+	a.GRpcConn = conn
+	a.txServiceClient = txtypes.NewServiceClient(conn)
+	a.grpcQueryClient = btclightclient.NewQueryClient(conn)
+
+	if a.Log == nil {
+		a.InitLogger(a.Config.Global.LogLevel)
+	}
+
+	a.initTxFactory()
+
+	return nil
+}
+
+// Query Light Client Chain Tip
+func (a *State) QueryChainTip() (*btclightclient.QueryChainTipResponse, error) {
+	// Timeout context for our queries
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
+	res, err := a.grpcQueryClient.QueryChainTip(ctx, &btclightclient.QueryChainTipRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 // Query Cosmos Account Auth Info
 func (a *State) queryAccountInfo() (*auth.BaseAccount, error) {
 
-	record, err := a.TxFactory.Keybase().Key(InternalKeyringName)
-	if err != nil {
-		return nil, err
-	}
-	address, err := record.GetAddress()
-	if err != nil {
-		return nil, err
-	}
-
 	// Query account info
 	query := auth.NewQueryClient(a.GRpcConn)
-	res, err := query.AccountInfo(context.Background(), &auth.QueryAccountInfoRequest{Address: address.String()})
+	res, err := query.AccountInfo(context.Background(), &auth.QueryAccountInfoRequest{Address: a.Config.Side.Sender})
 	if err != nil {
 		return nil, err
 	}
@@ -105,6 +132,8 @@ func (a *State) SendSideTx(msg sdk.Msg) error {
 	// create a new encoding config
 	encodingConfig := MakeEncodingConfig()
 	txBuilder := encodingConfig.TxConfig.NewTxBuilder()
+	txBuilder.SetGasLimit(a.Config.Side.Gas)
+	txBuilder.SetFeeAmount(sdk.Coins{sdk.NewInt64Coin("uside", int64(2000))})
 	txBuilder.SetMsgs(msg)
 
 	// Sign the transaction
@@ -113,12 +142,17 @@ func (a *State) SendSideTx(msg sdk.Msg) error {
 	if err != nil {
 		return err
 	}
-	// Create Signing Factory
-	factory := a.TxFactory
-	factory.WithAccountNumber(account.AccountNumber)
-	factory.WithSequence(account.Sequence)
 
-	err = tx.Sign(*factory, InternalKeyringName, txBuilder, true)
+	// Create Signing Factory
+	txf := a.TxFactory
+	// txf = txf.WithGasPrices("0.00001uside")
+	// txf = txf.WithFees("2000uside")
+	txf = txf.WithFeePayer(account.GetAddress())
+	txf = txf.WithTxConfig(encodingConfig.TxConfig)
+	txf = txf.WithAccountNumber(account.AccountNumber)
+	txf = txf.WithSequence(account.Sequence)
+
+	err = tx.Sign(txf, InternalKeyringName, txBuilder, true)
 	if err != nil {
 		log.Fatalf("failed to sign tx: %v", err)
 		return err
@@ -133,11 +167,16 @@ func (a *State) SendSideTx(msg sdk.Msg) error {
 	// Broadcast the transaction
 	res, err := a.txServiceClient.BroadcastTx(context.Background(), &txtypes.BroadcastTxRequest{
 		TxBytes: txBytes,
-		Mode:    txtypes.BroadcastMode_BROADCAST_MODE_BLOCK, // Change as needed
+		Mode:    txtypes.BroadcastMode_BROADCAST_MODE_SYNC, // Change as needed
 	})
 	if err != nil {
 		log.Fatalf("failed to broadcast tx: %v", err)
 		return err
+	}
+
+	if res.TxResponse.Code != 0 {
+		a.Log.Fatal("message failed", zap.String("error", res.TxResponse.RawLog))
+		return fmt.Errorf("message failed: %s", res.TxResponse.RawLog)
 	}
 
 	fmt.Printf("Transaction broadcasted with TX hash: %s\n", res.TxResponse.TxHash)
@@ -147,7 +186,7 @@ func (a *State) SendSideTx(msg sdk.Msg) error {
 // Send Update Senders Request
 func (a *State) SendUpdateSendersRequest(senders []string) error {
 	msg := &btclightclient.MsgUpdateSendersRequest{
-		Sender:  "",
+		Sender:  a.Config.Side.Sender,
 		Senders: senders,
 	}
 	return a.SendSideTx(msg)
@@ -156,7 +195,7 @@ func (a *State) SendUpdateSendersRequest(senders []string) error {
 // Send Submit Block Header Request
 func (a *State) SendSubmitBlockHeaderRequest(headers []*btclightclient.BlockHeader) error {
 	msg := &btclightclient.MsgSubmitBlockHeaderRequest{
-		Sender:       "",
+		Sender:       a.Config.Side.Sender,
 		BlockHeaders: headers,
 	}
 	return a.SendSideTx(msg)
@@ -171,36 +210,27 @@ func (a *State) initTxFactory() {
 
 	cdc := getCodec()
 	//create a Keyring
-	kb, err := keyring.New(AppName, keyring.BackendTest, a.HomePath+"/keyring", nil, cdc)
+	kb, err := keyring.New(AppName, keyring.BackendTest, a.HomePath, nil, cdc)
 	if err != nil {
 		panic(err)
 	}
 
 	f := tx.Factory{}
-	f.WithChainID(a.Config.Side.ChainID)
-	f.WithFromName(InternalKeyringName)
-	f.WithGas(a.Config.Side.Gas)
-	f.WithKeybase(kb)
-	f.WithSignMode(signing.SignMode_SIGN_MODE_DIRECT)
-
-	a.TxFactory = &f
+	f = f.WithChainID(a.Config.Side.ChainID)
+	f = f.WithFromName(InternalKeyringName)
+	f = f.WithGas(a.Config.Side.Gas)
+	f = f.WithGasAdjustment(1.5)
+	f = f.WithKeybase(kb).WithSignMode(signing.SignMode_SIGN_MODE_DIRECT)
+	a.TxFactory = f
 }
 
 // loadConfigFile reads config file into a.Config if file is present.
-func (a *State) LoadConfigFile(ctx context.Context) error {
+func (a *State) loadConfigFile(ctx context.Context) error {
 
 	cb := NewConfigBuilder(a.HomePath)
 	// unmarshall them into the wrapper struct
 	cfg := cb.LoadConfigFile()
 	a.Config = cfg
-
-	if a.Log == nil {
-		a.InitLogger(cfg.Global.LogLevel)
-	}
-
-	if a.TxFactory == nil {
-		a.initTxFactory()
-	}
 
 	return nil
 }
@@ -227,18 +257,20 @@ func (a *State) InitRPC() error {
 
 // Sync the light client with the bitcoin network
 func (a *State) FastSyncLightClient() {
-	client := a.rpc
+
 	// Get the current height from the sidechain
-	// TODO: Implement this later
-	bestHash, _ := client.GetBestBlockHash()
-	bestHeader, _ := client.GetBlockHeader(bestHash)
+	lightClientTip, err := a.QueryChainTip()
+	if err != nil {
+		a.Log.Error("Failed to query light client chain tip", zap.Error(err))
+		return
+	}
 
-	a.Log.Info("Start syncing light client", zap.Uint64("height", bestHeader.Height))
-	a.Log.Debug("Best block: ", zap.Any("header", bestHeader))
+	a.Log.Info("Start syncing light client", zap.Uint64("height", lightClientTip.Height), zap.String("hash", lightClientTip.Hash))
 
-	currentHeight := bestHeader.Height - 10
+	currentHeight := lightClientTip.Height + 1
+
 	for {
-		hash, err := client.GetBlockHash(int(currentHeight))
+		hash, err := a.rpc.GetBlockHash(int(currentHeight))
 		if err != nil {
 			a.Log.Error("Failed to process block hash", zap.Error(err))
 			return
@@ -250,7 +282,7 @@ func (a *State) FastSyncLightClient() {
 			return
 		}
 
-		header, err := client.GetBlockHeader(hash)
+		header, err := a.rpc.GetBlockHeader(hash)
 		if err != nil {
 			a.Log.Error("Failed to process block", zap.Error(err))
 			return
@@ -265,7 +297,7 @@ func (a *State) FastSyncLightClient() {
 
 		// a.Log.Info("Submit Block to Sidechain", zap.String("hash", block.Hash))
 		// Submit block to sidechain
-		// a.SubmitBlock(block)
+		a.SubmitBlock([]*zmqclient.BlockHeader{header})
 		a.Log.Debug("Block submitted",
 			zap.Uint64("Height", header.Height),
 			zap.String("PreviousBlockHash", header.PreviousBlockHash),
@@ -277,7 +309,7 @@ func (a *State) FastSyncLightClient() {
 			zap.Uint64("TxCount", header.NTx),
 		)
 
-		besthash, err := client.GetBestBlockHash()
+		besthash, err := a.rpc.GetBestBlockHash()
 		if besthash == header.Hash || err != nil {
 			a.Synced = true
 			a.Log.Info("Reached the best block")
@@ -389,9 +421,33 @@ func (a *State) SubmitBlock(blocks []*zmqclient.BlockHeader) {
 			zap.String("H", block.Hash),
 			zap.String("bits", block.Bits),
 		)
+
+		b := &btclightclient.BlockHeader{
+			PreviousBlockHash: block.PreviousBlockHash,
+			Hash:              block.Hash,
+			Height:            block.Height,
+			Version:           block.Version,
+			MerkleRoot:        block.MerkleRoot,
+			Time:              block.Time,
+			Bits:              block.Bits,
+			Nonce:             block.Nonce,
+			Ntx:               block.NTx,
+		}
+
+		// Submit block to sidechain
+		err := a.SendSubmitBlockHeaderRequest([]*btclightclient.BlockHeader{b})
+		if err != nil {
+			a.Log.Error("Failed to submit block", zap.Error(err))
+			panic(err)
+		}
 	}
 }
 
 func (a *State) ReadCA() ([]byte, error) {
 	return os.ReadFile(filepath.Join(a.HomePath, CA_FILE))
+}
+
+// Close the application state
+func (a *State) Close() {
+	a.GRpcConn.Close()
 }
