@@ -4,18 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
-	zmqclient "github.com/ordishs/go-bitcoin"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 
@@ -32,7 +28,11 @@ const (
 )
 
 // AppState is the modifiable state of the application.
+// App connects both the bitcoin and cosmos network
+// Connect to the bitcoin network via RPC; txindex, zmq must be enabled
+// Connect to the cosmos network via gRPC
 type State struct {
+	// General application state
 	// Log is the root logger of the application.
 	// Consumers are expected to store and use local copies of the logger
 	// after modifying with the .With method.
@@ -40,19 +40,23 @@ type State struct {
 
 	Viper *viper.Viper
 
-	HomePath    string
-	Debug       bool
-	Config      *Config
-	TrustHeader wire.BlockHeader
-	// @deprecated
-	// LastBitcoinBlockHash string
-	LastBitcoinHeader *zmqclient.BlockHeader
-	Synced            bool
-	rpc               *zmqclient.Bitcoind
+	HomePath string
+	Debug    bool
+	Config   *Config
 
-	// Cosmos Config
-	TxFactory       tx.Factory
-	GRpcConn        *grpc.ClientConn
+	// Bitcoin Variables
+	// Last Bitcoin Block
+	lastBitcoinBlock *btcjson.GetBlockHeaderVerboseResult
+	// Side chain synced to the bitcoin network
+	synced bool
+	rpc    *rpcclient.Client
+
+	// Cosmos Variables
+	account *auth.BaseAccount
+	params  *btclightclient.Params
+	// TrustHeader     wire.BlockHeader
+	txFactory       tx.Factory
+	gRPC            *grpc.ClientConn
 	grpcQueryClient btclightclient.QueryClient
 	txServiceClient txtypes.ServiceClient
 }
@@ -66,7 +70,7 @@ func NewAppState(home string) *State {
 	return &State{
 		Viper:    viper.New(),
 		HomePath: h,
-		Synced:   false,
+		synced:   false,
 	}
 }
 
@@ -87,7 +91,7 @@ func (a *State) Init() error {
 	}
 
 	// Create a transaction service client
-	a.GRpcConn = conn
+	a.gRPC = conn
 	a.txServiceClient = txtypes.NewServiceClient(conn)
 	a.grpcQueryClient = btclightclient.NewQueryClient(conn)
 
@@ -113,15 +117,62 @@ func (a *State) QueryChainTip() (*btclightclient.QueryChainTipResponse, error) {
 	return res, nil
 }
 
+// Query Parameters of Light Client
+func (a *State) QueryAndCheckLightClientPermission() (*btclightclient.QueryParamsResponse, error) {
+	// Timeout context for our queries
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
+	res, err := a.grpcQueryClient.QueryParams(ctx, &btclightclient.QueryParamsRequest{})
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if the sender is in the list of authorized senders
+	authorized := false
+	for _, sender := range res.Params.Senders {
+		if sender == a.Config.Side.Sender {
+			authorized = true
+			break
+		}
+	}
+
+	if !authorized {
+		panic(fmt.Sprintf("\n\nYou (%s) are not authorized to send bitcoin blocks to the sidechain.", a.Config.Side.Sender))
+	}
+
+	a.params = &res.Params
+	return res, nil
+}
+
+// Query Sequence of Side Account
+func (a *State) QuerySequence() (uint64, error) {
+	// Query account info
+	account, err := a.queryAccountInfo()
+	if err != nil {
+		return 0, err
+	}
+	return account.Sequence, nil
+}
+
 // Query Cosmos Account Auth Info
+// Sequence number is incremented for each transaction
 func (a *State) queryAccountInfo() (*auth.BaseAccount, error) {
 
+	// Return the account if it's already loaded
+	// Increment the sequence number for each transaction
+	if a.account != nil {
+		a.account.Sequence++
+		return a.account, nil
+	}
+
 	// Query account info
-	query := auth.NewQueryClient(a.GRpcConn)
+	query := auth.NewQueryClient(a.gRPC)
 	res, err := query.AccountInfo(context.Background(), &auth.QueryAccountInfoRequest{Address: a.Config.Side.Sender})
 	if err != nil {
 		return nil, err
 	}
+	a.account = res.Info
 	return res.Info, nil
 
 }
@@ -144,9 +195,9 @@ func (a *State) SendSideTx(msg sdk.Msg) error {
 	}
 
 	// Create Signing Factory
-	txf := a.TxFactory
-	// txf = txf.WithGasPrices("0.00001uside")
-	// txf = txf.WithFees("2000uside")
+	txf := a.txFactory
+	txf = txf.WithGasPrices("0.00001uside")
+	txf = txf.WithFees("2000uside")
 	txf = txf.WithFeePayer(account.GetAddress())
 	txf = txf.WithTxConfig(encodingConfig.TxConfig)
 	txf = txf.WithAccountNumber(account.AccountNumber)
@@ -183,24 +234,6 @@ func (a *State) SendSideTx(msg sdk.Msg) error {
 	return nil
 }
 
-// Send Update Senders Request
-func (a *State) SendUpdateSendersRequest(senders []string) error {
-	msg := &btclightclient.MsgUpdateSendersRequest{
-		Sender:  a.Config.Side.Sender,
-		Senders: senders,
-	}
-	return a.SendSideTx(msg)
-}
-
-// Send Submit Block Header Request
-func (a *State) SendSubmitBlockHeaderRequest(headers []*btclightclient.BlockHeader) error {
-	msg := &btclightclient.MsgSubmitBlockHeaderRequest{
-		Sender:       a.Config.Side.Sender,
-		BlockHeaders: headers,
-	}
-	return a.SendSideTx(msg)
-}
-
 func (a *State) InitLogger(configLogLevel string) error {
 	a.Log = zap.Must(zap.NewDevelopment())
 	return nil
@@ -221,11 +254,11 @@ func (a *State) initTxFactory() {
 	f = f.WithGas(a.Config.Side.Gas)
 	f = f.WithGasAdjustment(1.5)
 	f = f.WithKeybase(kb).WithSignMode(signing.SignMode_SIGN_MODE_DIRECT)
-	a.TxFactory = f
+	a.txFactory = f
 }
 
 // loadConfigFile reads config file into a.Config if file is present.
-func (a *State) loadConfigFile(ctx context.Context) error {
+func (a *State) loadConfigFile(_ context.Context) error {
 
 	cb := NewConfigBuilder(a.HomePath)
 	// unmarshall them into the wrapper struct
@@ -237,217 +270,24 @@ func (a *State) loadConfigFile(ctx context.Context) error {
 
 func (a *State) InitRPC() error {
 
-	rpcParam := strings.Split(a.Config.Bitcoin.RPC, ":")
-	if len(rpcParam) != 2 {
-		return nil
-	}
-	host := rpcParam[0]
-	port, err := strconv.Atoi(rpcParam[1])
-	if err != nil {
-		return err
-	}
+	a.QueryAndCheckLightClientPermission()
 
-	client, err := zmqclient.New(host, port, a.Config.Bitcoin.RPCUser, a.Config.Bitcoin.RPCPassword, false)
+	client, err := rpcclient.New(&rpcclient.ConnConfig{
+		Host:         a.Config.Bitcoin.RPC,
+		User:         a.Config.Bitcoin.RPCUser,
+		Pass:         a.Config.Bitcoin.RPCPassword,
+		HTTPPostMode: true,
+		DisableTLS:   true,
+	}, nil)
 	if err != nil {
 		return err
 	}
 	a.rpc = client
+
 	return nil
-}
-
-// Sync the light client with the bitcoin network
-func (a *State) FastSyncLightClient() {
-
-	// Get the current height from the sidechain
-	lightClientTip, err := a.QueryChainTip()
-	if err != nil {
-		a.Log.Error("Failed to query light client chain tip", zap.Error(err))
-		return
-	}
-
-	a.Log.Info("Start syncing light client", zap.Uint64("height", lightClientTip.Height), zap.String("hash", lightClientTip.Hash))
-
-	currentHeight := lightClientTip.Height + 1
-
-	for {
-		hash, err := a.rpc.GetBlockHash(int(currentHeight))
-		if err != nil {
-			a.Log.Error("Failed to process block hash", zap.Error(err))
-			return
-		}
-
-		if a.LastBitcoinHeader != nil && hash == a.LastBitcoinHeader.Hash {
-			a.Synced = true
-			a.Log.Info("Reached the last block")
-			return
-		}
-
-		header, err := a.rpc.GetBlockHeader(hash)
-		if err != nil {
-			a.Log.Error("Failed to process block", zap.Error(err))
-			return
-		}
-
-		if a.LastBitcoinHeader != nil && a.LastBitcoinHeader.Hash != header.PreviousBlockHash {
-			a.Log.Error("There must be a forked branch", zap.String("lasthash", a.LastBitcoinHeader.Hash), zap.String("previoushash", header.PreviousBlockHash))
-			return
-		}
-
-		a.LastBitcoinHeader = header
-
-		// a.Log.Info("Submit Block to Sidechain", zap.String("hash", block.Hash))
-		// Submit block to sidechain
-		a.SubmitBlock([]*zmqclient.BlockHeader{header})
-		a.Log.Debug("Block submitted",
-			zap.Uint64("Height", header.Height),
-			zap.String("PreviousBlockHash", header.PreviousBlockHash),
-			// zap.String("MerkleRoot", header.MerkleRoot),
-			zap.Uint64("Nonce", header.Nonce),
-			zap.String("Bits", header.Bits),
-			// zap.Int64("Version", block.Version),
-			zap.Uint64("Time", header.Time),
-			zap.Uint64("TxCount", header.NTx),
-		)
-
-		besthash, err := a.rpc.GetBestBlockHash()
-		if besthash == header.Hash || err != nil {
-			a.Synced = true
-			a.Log.Info("Reached the best block")
-			return
-		}
-
-		currentHeight++
-	}
-}
-
-func (a *State) OnNewBtcBlock(c []string) {
-	client := a.rpc
-	hash := c[1]
-
-	if !a.Synced {
-		a.Log.Info("Not synced yet, skipping block", zap.String("hash", hash))
-		return
-	}
-
-	// a.Log.Info("Received block", zap.String("hash", hash))
-	header, err := client.GetBlockHeader(hash)
-	if err != nil {
-		a.Log.Error("Failed to process block", zap.Error(err))
-		return
-	}
-
-	// it's the same block
-	if a.LastBitcoinHeader.Hash == header.Hash {
-		return
-	}
-
-	// Light client is behind the bitcoin network
-	if header.Height > a.LastBitcoinHeader.Height+1 {
-
-		a.Log.Info("===================================================================")
-		a.Log.Info("Replace the last header with the new one", zap.Uint64("behind", header.Height-a.LastBitcoinHeader.Height))
-		a.Log.Info("===================================================================")
-
-		newBlocks := []*zmqclient.BlockHeader{}
-		for i := a.LastBitcoinHeader.Height + 1; i < header.Height; i++ {
-			hash, err := client.GetBlockHash(int(i))
-			if err != nil {
-				a.Log.Error("Failed to process block hash", zap.Error(err))
-				return
-			}
-
-			header, err := client.GetBlockHeader(hash)
-			if err != nil {
-				a.Log.Error("Failed to process block", zap.Error(err))
-				return
-			}
-
-			if a.LastBitcoinHeader.Hash != header.PreviousBlockHash {
-				a.Log.Error("There must be a forked branch", zap.String("lasthash", a.LastBitcoinHeader.Hash), zap.String("previoushash", header.PreviousBlockHash))
-				return
-			}
-
-			a.LastBitcoinHeader = header
-			newBlocks = append(newBlocks, header)
-		}
-
-		a.SubmitBlock(newBlocks)
-		return
-	}
-
-	// A forked branch detected
-	if a.LastBitcoinHeader.Hash != header.PreviousBlockHash {
-
-		a.Log.Error("Forked branch detected",
-			zap.Uint64("height", header.Height),
-			zap.String("last.hash", a.LastBitcoinHeader.Hash),
-			zap.String("last.previoushash", a.LastBitcoinHeader.PreviousBlockHash),
-			zap.String("new.hash", header.Hash),
-			zap.String("new.previoushash", header.PreviousBlockHash),
-		)
-
-		// only check the last one block for now
-		// found the the common ancestor, and continue from there.
-		if a.LastBitcoinHeader.PreviousBlockHash == header.PreviousBlockHash {
-			a.Log.Info("===================================================================")
-			a.Log.Info("Replace the last header with the new one", zap.Uint64("height", header.Height))
-			a.Log.Info("===================================================================")
-			a.LastBitcoinHeader = header
-
-			a.SubmitBlock([]*zmqclient.BlockHeader{header})
-			return
-		}
-
-		a.Log.Error("Forked branch detected, but no common ancestor found in the last 10 blocks")
-		return
-	}
-
-	a.SubmitBlock([]*zmqclient.BlockHeader{header})
-
-	a.LastBitcoinHeader = header
-
-}
-
-func (a *State) SubmitBlock(blocks []*zmqclient.BlockHeader) {
-	// Submit block to the sidechain
-	for i, block := range blocks {
-		a.Log.Debug("Block submitted",
-			zap.Int("i", i),
-			zap.String("P", block.PreviousBlockHash),
-			zap.Uint64("Height", block.Height),
-			zap.Uint64("v", block.Version),
-		)
-		a.Log.Debug("Block submitted",
-			zap.String("H", block.Hash),
-			zap.String("bits", block.Bits),
-		)
-
-		b := &btclightclient.BlockHeader{
-			PreviousBlockHash: block.PreviousBlockHash,
-			Hash:              block.Hash,
-			Height:            block.Height,
-			Version:           block.Version,
-			MerkleRoot:        block.MerkleRoot,
-			Time:              block.Time,
-			Bits:              block.Bits,
-			Nonce:             block.Nonce,
-			Ntx:               block.NTx,
-		}
-
-		// Submit block to sidechain
-		err := a.SendSubmitBlockHeaderRequest([]*btclightclient.BlockHeader{b})
-		if err != nil {
-			a.Log.Error("Failed to submit block", zap.Error(err))
-			panic(err)
-		}
-	}
-}
-
-func (a *State) ReadCA() ([]byte, error) {
-	return os.ReadFile(filepath.Join(a.HomePath, CA_FILE))
 }
 
 // Close the application state
 func (a *State) Close() {
-	a.GRpcConn.Close()
+	a.gRPC.Close()
 }

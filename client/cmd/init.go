@@ -1,6 +1,10 @@
 package cmd
 
 import (
+	"bufio"
+	"os"
+	"strings"
+
 	"github.com/sideprotocol/shuttler/app"
 	"github.com/spf13/cobra"
 )
@@ -17,13 +21,29 @@ func NewInitCommand() *cobra.Command {
 				return err
 			}
 
+			generate, err := cmd.Flags().GetBool("generate")
+			if err != nil {
+				return err
+			}
+			mnemonic := ""
+			if !generate {
+				println("Please input your mnemonic: ")
+				reader := bufio.NewReader(os.Stdin)
+				mnemonic, err = reader.ReadString('\n')
+				if err != nil {
+					return err
+				}
+			}
+
 			cb := app.NewConfigBuilder(home)
-			cb.InitConfig()
-			println("Configuration file created at: ", cb.ConfigFilePath())
+			cb.InitConfig(strings.TrimSpace(mnemonic))
+			println("\nConfiguration file created at: ", cb.ConfigFilePath())
 
 			return nil
 		},
 	}
+
+	cmd.PersistentFlags().Bool("generate", false, "Generate a new mnemonic for the keyring instead of recovering an existing one")
 
 	return cmd
 }

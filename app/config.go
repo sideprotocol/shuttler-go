@@ -11,6 +11,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/go-bip39"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -46,8 +47,8 @@ type Side struct {
 	RPC  string `toml:"rpc"                           comment:"Side RPC endpoint"`
 	REST string `toml:"rest"                          comment:"Side REST endpoint"`
 
-	Frequency int    `toml:"frequency"                  comment:"frequency of Side block polling in	seconds"`
-	Sender    string `toml:"sender"                     comment:"Side sender address"`
+	Frequency int    `toml:"frequency"                 comment:"frequency of Side block polling in	seconds"`
+	Sender    string `toml:"sender"                    comment:"Side sender address"`
 	ChainID   string `toml:"chain-id"                  comment:"Side chain ID"`
 	Gas       uint64 `toml:"gas"                       comment:"Side chain gas"`
 }
@@ -75,6 +76,7 @@ func defaultConfig() *Config {
 			Frequency: 6,
 			Sender:    "",
 			ChainID:   "S2-testnet-1",
+			Gas:       2000000,
 		},
 	}
 }
@@ -109,7 +111,7 @@ func (c *ConfigBuilder) ConfigFilePath() string {
 	return c.homePath + "/config/config.toml"
 }
 
-func (c *ConfigBuilder) InitConfig() *Config {
+func (c *ConfigBuilder) InitConfig(m string) *Config {
 	cfg := defaultConfig()
 
 	// Set the sender address
@@ -122,7 +124,13 @@ func (c *ConfigBuilder) InitConfig() *Config {
 	if err != nil {
 		panic(err)
 	}
-	record, mnemonic, err := kb.NewMnemonic(InternalKeyringName, keyring.English, hdPath, "", algo)
+	mnemonic := m
+	if mnemonic == "" {
+		entropy, _ := bip39.NewEntropy(128)
+		mnemonic, _ = bip39.NewMnemonic(entropy)
+	}
+
+	record, err := kb.NewAccount(InternalKeyringName, mnemonic, "", hdPath, algo)
 	if err != nil {
 		panic(err)
 	}
@@ -132,7 +140,10 @@ func (c *ConfigBuilder) InitConfig() *Config {
 	}
 	cfg.Side.Sender = accAddr.String()
 
-	println("mnemonic: ", mnemonic)
+	println("====================================================")
+	println("Mnemonic: ", mnemonic)
+	println("Address:  ", accAddr.String())
+	println("====================================================")
 
 	out, err := toml.Marshal(cfg)
 	if err != nil {
@@ -154,7 +165,7 @@ func (c *ConfigBuilder) LoadConfigFile() *Config {
 	// check if config file exists
 	_, err := os.Stat(c.ConfigFilePath())
 	if os.IsNotExist(err) {
-		return c.InitConfig()
+		return c.InitConfig("")
 	}
 
 	in, err := os.ReadFile(c.ConfigFilePath())

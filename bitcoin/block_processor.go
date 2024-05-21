@@ -1,15 +1,11 @@
 package bitcoin
 
 import (
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/sideprotocol/shuttler/app"
-	"go.uber.org/zap"
 )
 
+// @deprecated
 type BTCBlockProcessor struct {
 	// Bitcoin client
 	client *rpcclient.Client
@@ -48,57 +44,57 @@ func NewBlockProcessor(a *app.State) *BTCBlockProcessor {
 	}
 }
 
-func (b *BTCBlockProcessor) SyncHeader(new_hash string) error {
+// func (b *BTCBlockProcessor) SyncHeader(new_hash string) error {
 
-	hash, err := chainhash.NewHashFromStr(new_hash)
-	if err != nil {
-		return err
-	}
-	// info,err := b.client.GetBlockChainInfo()
+// 	hash, err := chainhash.NewHashFromStr(new_hash)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	// info,err := b.client.GetBlockChainInfo()
 
-	block, err := b.client.GetBlock(hash)
-	// block.
-	if err != nil {
-		return err
-	}
+// 	block, err := b.client.GetBlock(hash)
+// 	// block.
+// 	if err != nil {
+// 		return err
+// 	}
 
-	var emptyFlags blockchain.BehaviorFlags
-	timeSource := blockchain.NewMedianTime()
-	chainParam := app.ChainParams(b.app.Config.Bitcoin.Chain)
+// 	var emptyFlags blockchain.BehaviorFlags
+// 	timeSource := blockchain.NewMedianTime()
+// 	chainParam := app.ChainParams(b.app.Config.Bitcoin.Chain)
 
-	err = blockchain.CheckBlockHeaderSanity(&block.Header, chainParam.PowLimit, timeSource, emptyFlags)
-	if err != nil {
-		return err
-	}
+// 	err = blockchain.CheckBlockHeaderSanity(&block.Header, chainParam.PowLimit, timeSource, emptyFlags)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	println("Block Hash", block.Header.BlockHash().String())
+// 	println("Block Hash", block.Header.BlockHash().String())
 
-	b.app.Log.Info("Block Hash", zap.Any("header", block.Header))
+// 	b.app.Log.Info("Block Hash", zap.Any("header", block.Header))
 
-	// // Create a new blockchain instance, no persistent db required for just header checks
-	// chain, err := blockchain.New(&blockchain.Config{
-	// 	ChainParams: &chaincfg.MainNetParams,
-	// })
+// 	// // Create a new blockchain instance, no persistent db required for just header checks
+// 	// chain, err := blockchain.New(&blockchain.Config{
+// 	// 	ChainParams: &chaincfg.MainNetParams,
+// 	// })
 
-	// if err != nil {
-	// 	return err
-	// }
+// 	// if err != nil {
+// 	// 	return err
+// 	// }
 
-	bc := btcutil.NewBlock(block)
-	powLimit := chaincfg.MainNetParams.PowLimit
+// 	bc := btcutil.NewBlock(block)
+// 	powLimit := chaincfg.MainNetParams.PowLimit
 
-	b.app.Log.Info("Block height", zap.Int32("height", bc.Height()))
+// 	b.app.Log.Info("Block height", zap.Int32("height", bc.Height()))
 
-	// Verify the block header
-	err = blockchain.CheckProofOfWork(bc, powLimit)
-	if err != nil {
-		return err
-	}
+// 	// Verify the block header
+// 	err = blockchain.CheckProofOfWork(bc, powLimit)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	b.app.TrustHeader = block.Header
+// 	b.app.TrustHeader = block.Header
 
-	return nil
-}
+// 	return nil
+// }
 
 func (b *BTCBlockProcessor) Shutdown() {
 	b.client.Shutdown()

@@ -2,10 +2,14 @@ package bitcoin
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/ordishs/go-bitcoin"
 
 	"google.golang.org/grpc"
@@ -16,63 +20,75 @@ import (
 
 // Test Sending Transactions to Cosmos Blockchain
 func TestSendingTransactions(t *testing.T) {
-	// gRPC endpoint of the Cosmos SDK node
-	// nodeEndpoint := "localhost:9090"
 
-	// // Setup a gRPC connection to the node
-	// conn, err := grpc.Dial(nodeEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	cfg := &rpcclient.ConnConfig{
+		Host:         "signet:18332",
+		User:         "side",
+		Pass:         "12345678",
+		HTTPPostMode: true,
+		DisableTLS:   true,
+	}
+	client, err := rpcclient.New(cfg, nil)
+
+	// client, err := bitcoin.New("signet", 18332, "side", "12345678", false)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	// Replace "targetAddress" with the address you want to check
+	targetAddress := "your_target_address"
+
+	// Get the block hash of the latest block
+	bestBlockHash, err := client.GetBestBlockHash()
+	if err != nil {
+		log.Fatalf("Error getting best block hash: %v", err)
+	}
+
+	// Get the block info
+	block, err := client.GetBlock(bestBlockHash)
+	if err != nil {
+		log.Fatalf("Error getting block info: %v", err)
+	}
+
+	// Check if the target address has transactions in the block
+	found := false
+	for _, tx := range block.Transactions {
+		for _, txOut := range tx.TxOut {
+			pkScript, err := txscript.ParsePkScript(txOut.PkScript)
+			if err != nil {
+				continue
+			}
+			addr, err := pkScript.Address(&chaincfg.MainNetParams)
+			if err != nil {
+				continue
+			}
+			if addr.String() == targetAddress {
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+
+	if found {
+		fmt.Printf("Transaction involving address %s found in block %s\n", targetAddress, bestBlockHash)
+	} else {
+		fmt.Printf("No transaction involving address %s found in block %s\n", targetAddress, bestBlockHash)
+	}
+
+	// Produce a Merkle proof if the target address was found
+	// if found {
+
+	// var txs []*btcutil.Tx
+	// merkleProof, err := zmq.BuildMerkleTreeStore(txs)
 	// if err != nil {
-	// 	log.Fatalf("failed to dial: %v", err)
+	// 	log.Fatalf("Error producing Merkle proof: %v", err)
 	// }
-	// defer conn.Close()
-
-	// // Create a transaction service client
-	// txClient := txtypes.NewServiceClient(conn)
-
-	// // Creating a simple send message from one account to another
-	// fromPrivKey := secp256k1.GenPrivKey()
-	// fromAddr := sdk.AccAddress(fromPrivKey.PubKey().Address()).String()
-	// toAddr := "cosmos1..." // Change this to the recipient's address
-
-	// // Create a MsgSend
-	// msg := &banktypes.MsgSend{
-	// 	FromAddress: fromAddr,
-	// 	ToAddress:   toAddr,
-	// 	Amount:      sdk.NewCoins(sdk.NewInt64Coin("uatom", 100)), // 100 uatom
+	// fmt.Println("Merkle proof:", merkleProof)
 	// }
 
-	// // Encode the message
-	// // create a new encoding config
-	// encodingConfig := app.MakeEncodingConfig()
-
-	// Sign the transaction
-	// signerData := authtypes.SignerData{
-	// 	ChainID:       "chain-id", // Your chain ID here
-	// 	AccountNumber: 0,          // Replace with actual account number
-	// 	Sequence:      0,          // Replace with actual sequence
-	// }
-	// tx.NewFactoryCLI(ctx, flag)
-	// err = tx.Sign(txBuilder, client.DefaultSignerFactory(encodingConfig.TxConfig.SignModeHandler()), fromPrivKey, signerData, encodingConfig.TxConfig)
-	// err = tx.Sign(tx.Factory{}, "name", txBuilder, true)
-	// if err != nil {
-	// 	log.Fatalf("failed to sign tx: %v", err)
-	// }
-
-	// txBytes, err := encodingConfig.TxConfig.TxEncoder()(txBuilder.GetTx())
-	// if err != nil {
-	// 	log.Fatalf("failed to encode tx: %v", err)
-	// }
-
-	// // Broadcast the transaction
-	// res, err := txClient.BroadcastTx(context.Background(), &txtypes.BroadcastTxRequest{
-	// 	TxBytes: txBytes,
-	// 	Mode:    txtypes.BroadcastMode_BROADCAST_MODE_BLOCK, // Change as needed
-	// })
-	// if err != nil {
-	// 	log.Fatalf("failed to broadcast tx: %v", err)
-	// }
-
-	// fmt.Printf("Transaction broadcasted with TX hash: %s\n", res.TxResponse.TxHash)
 }
 
 // Test Cosmos gRPC client
