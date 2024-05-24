@@ -64,11 +64,7 @@ func TestMerkleProof(t *testing.T) {
 	fmt.Println("Merkle Proof for:", hn.Hash().String(), "proof length:", len(proof))
 
 	for i, p := range proof {
-		if p == nil {
-			fmt.Printf("Proof %d: %s\n", i+1, "nil")
-		} else {
-			fmt.Printf("Proof %d: %s\n", i+1, *p)
-		}
+		fmt.Printf("Proof %d: %s\n", i+1, p)
 	}
 
 	// Verify the proof

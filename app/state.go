@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -104,6 +105,23 @@ func (a *State) Init() error {
 	return nil
 }
 
+// Return current chaincfg based on the configuration
+func (a *State) GetChainCfg() *chaincfg.Params {
+	switch a.Config.Bitcoin.Chain {
+	case "mainnet":
+		return &chaincfg.MainNetParams
+	case "testnet":
+		return &chaincfg.TestNet3Params
+	case "regtest":
+		return &chaincfg.RegressionNetParams
+	case "simnet":
+		return &chaincfg.SimNetParams
+	case "signet":
+		return &chaincfg.SigNetParams
+	}
+	return &chaincfg.MainNetParams
+}
+
 // Query Light Client Chain Tip
 func (a *State) QueryChainTip() (*btclightclient.QueryChainTipResponse, error) {
 	// Timeout context for our queries
@@ -186,6 +204,22 @@ func (a *State) SendSideTx(msg sdk.Msg) error {
 	txBuilder.SetGasLimit(a.Config.Side.Gas)
 	txBuilder.SetFeeAmount(sdk.Coins{sdk.NewInt64Coin("uside", int64(2000))})
 	txBuilder.SetMsgs(msg)
+
+	// Estimate the gas
+	// txBytes, err := encodingConfig.TxConfig.TxEncoder()(txBuilder.GetTx())
+	// if err != nil {
+	// 	log.Fatalf("failed to encode tx: %v", err)
+	// 	return err
+	// }
+	// estRes, err := a.txServiceClient.Simulate(context.Background(), &txtypes.SimulateRequest{
+	// 	TxBytes: txBytes,
+	// })
+	// if err != nil {
+	// 	log.Fatalf("failed to estimate gas: %v", err)
+	// 	return err
+	// }
+	// log.Printf("Estimated gas: %d/%d\n", estRes.GasInfo.GasUsed, estRes.GasInfo.GasWanted)
+	// txBuilder.SetGasLimit(uint64(float32(estRes.GasInfo.GasUsed) * 2))
 
 	// Sign the transaction
 	// Query Account info

@@ -205,5 +205,7 @@ func (a *State) SubmitBlock(blocks []*btcjson.GetBlockHeaderVerboseResult) {
 			a.Log.Error("Failed to submit block", zap.Error(err))
 			panic(err)
 		}
+
+		a.ScanVaultTx(block.Height)
 	}
 }

@@ -37,8 +37,8 @@ type Bitcoin struct {
 	ZMQHost string `toml:"zmqhost"                           comment:"Bitcoin ZMQ endpoint"`
 	ZMQPort int    `toml:"zmqport"                      comment:"Bitcoin ZMQ port"`
 
-	Frequency int    `toml:"frequency"                  comment:"frequency of Bitcoin block polling in seconds"`
-	Sender    string `toml:"sender"                     comment:"Bitcoin sender address"`
+	Frequency    int    `toml:"frequency"                  comment:"frequency of Bitcoin block polling in seconds"`
+	VaultAddress string `toml:"vault-address" comment:"Vault address for the transaction"`
 }
 
 type Side struct {
@@ -59,15 +59,15 @@ func defaultConfig() *Config {
 			LogLevel: "info",
 		},
 		Bitcoin: Bitcoin{
-			Chain:       "mainnet",
-			RPC:         "signet:18332",
-			RPCUser:     "side",
-			RPCPassword: "12345678",
-			Frequency:   10 * 60 * 60,
-			Sender:      "",
-			Protocol:    "http",
-			ZMQHost:     "signet",
-			ZMQPort:     18330,
+			Chain:        "mainnet",
+			RPC:          "signet:18332",
+			RPCUser:      "side",
+			RPCPassword:  "12345678",
+			Frequency:    10 * 60 * 60,
+			VaultAddress: "",
+			Protocol:     "http",
+			ZMQHost:      "signet",
+			ZMQPort:      18330,
 		},
 		Side: Side{
 			RPC:       "http://localhost:26657",

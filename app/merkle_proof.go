@@ -47,11 +47,11 @@ func merkleTreeHeight(n int) int {
 }
 
 // Function to generate a Merkle proof
-func GenerateMerkleProof(txs []*btcutil.Tx, hn *chainhash.Hash) []*string {
+func GenerateMerkleProof(txs []*btcutil.Tx, hn *chainhash.Hash) []string {
 
 	ntx := len(txs)
 	if ntx <= 1 {
-		return []*string{}
+		return []string{}
 	}
 
 	// Calculate the Merkle tree
@@ -70,7 +70,7 @@ func GenerateMerkleProof(txs []*btcutil.Tx, hn *chainhash.Hash) []*string {
 	}
 
 	// Calculate the Merkle proof
-	proof := []*string{}
+	proof := []string{}
 	height := merkleTreeHeight(ntx)
 	currentLevelStart := 0
 	currentLevelSize := merkleTreeWidth(ntx) // This should be set to the number of leaves initially
@@ -102,7 +102,7 @@ func GenerateMerkleProof(txs []*btcutil.Tx, hn *chainhash.Hash) []*string {
 				bz = append([]byte{position}, sibling.CloneBytes()...)
 			}
 			pstr := base64.StdEncoding.EncodeToString(bz)
-			proof = append(proof, &pstr)
+			proof = append(proof, pstr)
 		}
 
 		// Move to the next level
@@ -115,14 +115,11 @@ func GenerateMerkleProof(txs []*btcutil.Tx, hn *chainhash.Hash) []*string {
 }
 
 // VerifyMerkleProof verifies a Merkle proof
-func VerifyMerkleProof(proofs []*string, hn, root *chainhash.Hash) bool {
+func VerifyMerkleProof(proofs []string, hn, root *chainhash.Hash) bool {
 	current := hn
 	for _, proof := range proofs {
-		if proof == nil {
-			return false
-		}
 
-		bytes, err := base64.StdEncoding.DecodeString(*proof)
+		bytes, err := base64.StdEncoding.DecodeString(proof)
 		if err != nil {
 			return false
 		}
