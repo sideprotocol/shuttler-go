@@ -21,6 +21,11 @@ func NewInitCommand() *cobra.Command {
 				return err
 			}
 
+			network, err := cmd.Flags().GetString("network")
+			if err != nil {
+				return err
+			}
+
 			generate, err := cmd.Flags().GetBool("generate")
 			if err != nil {
 				return err
@@ -36,7 +41,7 @@ func NewInitCommand() *cobra.Command {
 			}
 
 			cb := app.NewConfigBuilder(home)
-			cb.InitConfig(strings.TrimSpace(mnemonic))
+			cb.InitConfig(strings.TrimSpace(mnemonic), network)
 			println("\nConfiguration file created at: ", cb.ConfigFilePath())
 
 			return nil
@@ -44,6 +49,7 @@ func NewInitCommand() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().Bool("generate", false, "Generate a new mnemonic for the keyring instead of recovering an existing one")
+	cmd.PersistentFlags().String("network", "mainnet", "The network to use (mainnet, testnet, regtest, simnet)")
 
 	return cmd
 }

@@ -53,13 +53,13 @@ type Side struct {
 	Gas       uint64 `toml:"gas"                       comment:"Side chain gas"`
 }
 
-func defaultConfig() *Config {
+func defaultConfig(network string) *Config {
 	return &Config{
 		Global: Global{
 			LogLevel: "info",
 		},
 		Bitcoin: Bitcoin{
-			Chain:        "mainnet",
+			Chain:        network,
 			RPC:          "signet:18332",
 			RPCUser:      "side",
 			RPCPassword:  "12345678",
@@ -89,7 +89,7 @@ const (
 var (
 	DefaultHome           = filepath.Join(os.Getenv("HOME"), ".shuttler")
 	CA_FILE               = "rpc.cert"
-	DefaultConfigFilePath = DefaultHome + "/config/config.toml"
+	DefaultConfigFilePath = DefaultHome + "/config.toml"
 )
 
 type ConfigBuilder struct {
@@ -108,14 +108,14 @@ func NewConfigBuilder(homePath string) *ConfigBuilder {
 }
 
 func (c *ConfigBuilder) ConfigFilePath() string {
-	return c.homePath + "/config/config.toml"
+	return c.homePath + "/config.toml"
 }
 
-func (c *ConfigBuilder) InitConfig(m string) *Config {
-	cfg := defaultConfig()
+func (c *ConfigBuilder) InitConfig(m, network string) *Config {
+	cfg := defaultConfig(network)
 
 	// Set the sender address
-	c.setKeyringPrefix(cfg.Bitcoin.Chain)
+	c.setKeyringPrefix(network)
 	hdPath, algo := getKeyType("segwit")
 
 	// init keyring
@@ -150,7 +150,7 @@ func (c *ConfigBuilder) InitConfig(m string) *Config {
 		panic(err)
 	}
 
-	os.MkdirAll(c.homePath+"/config", 0755)
+	os.MkdirAll(c.homePath, 0755)
 
 	err = os.WriteFile(c.ConfigFilePath(), out, 0644)
 	if err != nil {
@@ -165,7 +165,7 @@ func (c *ConfigBuilder) LoadConfigFile() *Config {
 	// check if config file exists
 	_, err := os.Stat(c.ConfigFilePath())
 	if os.IsNotExist(err) {
-		return c.InitConfig("")
+		return c.InitConfig("", "mainnet")
 	}
 
 	in, err := os.ReadFile(c.ConfigFilePath())
@@ -185,18 +185,9 @@ func (c *ConfigBuilder) LoadConfigFile() *Config {
 func (c *ConfigBuilder) setKeyringPrefix(chain string) {
 	// set keyring prefix
 	// Set prefix for sender address to bech32
-	switch chain {
-	case "mainnet":
-		sdk.GetConfig().SetBech32PrefixForAccount("bc", "bcpub")
-	case "testnet":
-		sdk.GetConfig().SetBech32PrefixForAccount("tb", "tbpub")
-	}
+	// sdk.GetConfig().SetBech32PrefixForAccount(prefix, prefix+sdk.PrefixPublic)
+	sdk.GetConfig().SetBtcChainCfg(ChainParams(chain))
 	sdk.GetConfig().Seal()
-}
-
-func (c *ConfigBuilder) validateConfig() error {
-	// validate config
-	return nil
 }
 
 func getCodec() codec.Codec {
