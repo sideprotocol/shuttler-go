@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	DefaultTimeout = 100 * time.Second
+	DefaultTimeout = 15 * time.Second
 )
 
 // AppState is the modifiable state of the application.

@@ -19,6 +19,8 @@ func Start(a *app.State) {
 	if host == "" || port == 0 {
 		panic("ZMQ host or port not set")
 	}
+
+	a.Log.Info("Connecting to the Side and Bitcoin network...")
 	err := a.InitRPC()
 	if err != nil {
 		panic(err)
