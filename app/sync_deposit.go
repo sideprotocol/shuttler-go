@@ -11,7 +11,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"go.uber.org/zap"
 
-	btclightclient "github.com/sideprotocol/side/x/btclightclient/types"
+	btclightclient "github.com/sideprotocol/side/x/btcbridge/types"
 )
 
 // Scan the transanctions in the block

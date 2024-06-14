@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/sideprotocol/shuttler/app"
 	"go.uber.org/zap"
@@ -37,6 +38,10 @@ func Start(a *app.State) {
 	}
 	a.Log.Info("Waiting for blocks...")
 
+	// 3. Add a Timer to fetch transactions to the bitcoin network
+	ticker := time.NewTicker(6 * time.Second)
+	defer ticker.Stop()
+
 	// Setup a channel to listen for an interrupt or SIGTERM signal.
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -48,12 +53,14 @@ func Start(a *app.State) {
 		case <-sigs:
 			a.Log.Info("Exiting...")
 			return
+		case <-ticker.C:
+			a.SyncWithdrawalTxns()
 		}
 	}
 	// return nil
 }
 
-func FetchTxns(a *app.State, client *zmqclient.Bitcoind) {
-	// Fetch transactions from the bitcoin network
-	// client.
-}
+// func FetchTxns(a *app.State, client *zmqclient.Bitcoind) {
+// 	// Fetch transactions from the bitcoin network
+// 	// client.
+// }

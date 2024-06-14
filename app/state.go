@@ -19,7 +19,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	auth "github.com/cosmos/cosmos-sdk/x/auth/types"
-	btclightclient "github.com/sideprotocol/side/x/btclightclient/types"
+	btclightclient "github.com/sideprotocol/side/x/btcbridge/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -184,9 +184,12 @@ func (a *State) queryAccountInfo() (*auth.BaseAccount, error) {
 		return a.account, nil
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
 	// Query account info
 	query := auth.NewQueryClient(a.gRPC)
-	res, err := query.AccountInfo(context.Background(), &auth.QueryAccountInfoRequest{Address: a.Config.Side.Sender})
+	res, err := query.AccountInfo(ctx, &auth.QueryAccountInfoRequest{Address: a.Config.Side.Sender})
 	if err != nil {
 		return nil, err
 	}

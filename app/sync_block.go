@@ -3,13 +3,13 @@ package app
 import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	btclightclient "github.com/sideprotocol/side/x/btclightclient/types"
+	btcbridge "github.com/sideprotocol/side/x/btcbridge/types"
 	"go.uber.org/zap"
 )
 
 // Send Submit Block Header Request
-func (a *State) SendSubmitBlockHeaderRequest(headers []*btclightclient.BlockHeader) error {
-	msg := &btclightclient.MsgSubmitBlockHeaderRequest{
+func (a *State) SendSubmitBlockHeaderRequest(headers []*btcbridge.BlockHeader) error {
+	msg := &btcbridge.MsgSubmitBlockHeaderRequest{
 		Sender:       a.Config.Side.Sender,
 		BlockHeaders: headers,
 	}
@@ -187,7 +187,7 @@ func (a *State) SubmitBlock(blocks []*btcjson.GetBlockHeaderVerboseResult) {
 			zap.String("bits", block.Bits),
 		)
 
-		b := &btclightclient.BlockHeader{
+		b := &btcbridge.BlockHeader{
 			PreviousBlockHash: block.PreviousHash,
 			Hash:              block.Hash,
 			Height:            uint64(block.Height),
@@ -200,7 +200,7 @@ func (a *State) SubmitBlock(blocks []*btcjson.GetBlockHeaderVerboseResult) {
 		}
 
 		// Submit block to sidechain
-		err := a.SendSubmitBlockHeaderRequest([]*btclightclient.BlockHeader{b})
+		err := a.SendSubmitBlockHeaderRequest([]*btcbridge.BlockHeader{b})
 		if err != nil {
 			a.Log.Error("Failed to submit block", zap.Error(err))
 			panic(err)

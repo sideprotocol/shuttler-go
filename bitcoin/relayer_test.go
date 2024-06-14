@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	btclightclient "github.com/sideprotocol/side/x/btclightclient/types"
+	btclightclient "github.com/sideprotocol/side/x/btcbridge/types"
 )
 
 // Test Sending Transactions to Cosmos Blockchain

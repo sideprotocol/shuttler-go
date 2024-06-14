@@ -27,18 +27,19 @@ type Global struct {
 }
 
 type Bitcoin struct {
-	Chain string `toml:"chain"                         comment:"Bitcoin chains: mainnet, testnet, regtest, signet" default:"mainnet" validate:"oneof=mainnet testnet regtest signet"`
+	Chain string `toml:"chain"                          comment:"Bitcoin chains: mainnet, testnet, regtest, signet" default:"mainnet" validate:"oneof=mainnet testnet regtest signet"`
 	// Bitcoin specific configuration
-	RPC         string `toml:"rpc"                           comment:"Bitcoin RPC endpoint"`
-	RPCUser     string `toml:"rpcuser"                   comment:"Bitcoin RPC user"`
-	RPCPassword string `toml:"rpcpassword"           comment:"Bitcoin RPC password"`
-	Protocol    string `toml:"protocol"                  comment:"Bitcoin RPC protocol"`
+	RPC         string `toml:"rpc"                      comment:"Bitcoin RPC endpoint"`
+	RPCUser     string `toml:"rpcuser"                  comment:"Bitcoin RPC user"`
+	RPCPassword string `toml:"rpcpassword"              comment:"Bitcoin RPC password"`
+	Protocol    string `toml:"protocol"                 comment:"Bitcoin RPC protocol"`
 
-	ZMQHost string `toml:"zmqhost"                           comment:"Bitcoin ZMQ endpoint"`
+	ZMQHost string `toml:"zmqhost"                      comment:"Bitcoin ZMQ host"`
 	ZMQPort int    `toml:"zmqport"                      comment:"Bitcoin ZMQ port"`
 
-	Frequency    int    `toml:"frequency"                  comment:"frequency of Bitcoin block polling in seconds"`
-	VaultAddress string `toml:"vault-address" comment:"Vault address for the transaction"`
+	VaultAddress string `toml:"vault-address"          comment:"Vault address for the transaction"`
+	VaultSigner  bool   `toml:"vault-signer"           comment:"Enable vault signer to sign the transaction, only used for testing"`
+	VaultWIF     string `toml:"vault-mnemonic"         comment:"Vault mnemonic for the transaction, only used for testing"`
 }
 
 type Side struct {
@@ -60,14 +61,15 @@ func defaultConfig(network string) *Config {
 		},
 		Bitcoin: Bitcoin{
 			Chain:        network,
-			RPC:          "signet:18332",
+			RPC:          "signet:38332",
 			RPCUser:      "side",
 			RPCPassword:  "12345678",
-			Frequency:    10 * 60 * 60,
 			VaultAddress: "",
 			Protocol:     "http",
 			ZMQHost:      "signet",
-			ZMQPort:      18330,
+			ZMQPort:      38330,
+			VaultSigner:  false,
+			VaultWIF:     "",
 		},
 		Side: Side{
 			RPC:       "http://localhost:26657",
