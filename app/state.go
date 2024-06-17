@@ -148,7 +148,7 @@ func (a *State) QueryAndCheckLightClientPermission() (*btclightclient.QueryParam
 
 	// Check if the sender is in the list of authorized senders
 	authorized := false
-	for _, sender := range res.Params.Senders {
+	for _, sender := range res.Params.QualifiedRelayers {
 		if sender == a.Config.Side.Sender {
 			authorized = true
 			break

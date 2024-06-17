@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
-	"slices"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"go.uber.org/zap"
 
-	btclightclient "github.com/sideprotocol/side/x/btcbridge/types"
+	btcbridge "github.com/sideprotocol/side/x/btcbridge/types"
 )
 
 // Scan the transanctions in the block
@@ -54,6 +53,13 @@ func (a *State) ScanVaultTx(current int32) error {
 	}
 	uBlock := btcutil.NewBlock(block)
 	for i, tx := range uBlock.Transactions() {
+		// check if the transaction is a withdraw transaction
+		for _, txIn := range tx.MsgTx().TxIn {
+			// check if the transaction is spending from the vault
+			// Submit the transaction to the sidechain
+			a.Log.Debug("Checking if the transaction is a withdraw transaction", zap.Int("index", i), zap.String("tx", txIn.PreviousOutPoint.String()))
+		}
+
 		// check if the transaction is a deposit transaction
 		for _, txOut := range tx.MsgTx().TxOut {
 
@@ -65,12 +71,15 @@ func (a *State) ScanVaultTx(current int32) error {
 			if err != nil {
 				continue
 			}
-			// TODO remove i==1 later
-			if i == 1 || slices.Contains(a.params.BtcVoucherAddress, addr.String()) {
-				err := a.SubmitDepositTx(blockhash, tx, uBlock.Transactions())
-				if err != nil {
-					return err
-				}
+
+			vault := btcbridge.SelectVaultByBitcoinAddress(a.params.Vaults, addr.String())
+			if vault == nil {
+				continue
+			}
+
+			err = a.SubmitDepositTx(blockhash, tx, uBlock.Transactions())
+			if err != nil {
+				return err
 			}
 		}
 
@@ -119,7 +128,7 @@ func (a *State) SubmitDepositTx(blockhash *chainhash.Hash, tx *btcutil.Tx, txs [
 	// Calulate the in
 	proof := GenerateMerkleProof(txs, tx.Hash())
 
-	depositTx := &btclightclient.MsgSubmitTransactionRequest{
+	depositTx := &btcbridge.MsgSubmitDepositTransactionRequest{
 		Sender:      a.Config.Side.Sender,
 		Blockhash:   blockhash.String(),
 		PrevTxBytes: base64.StdEncoding.EncodeToString(prevBuf.Bytes()),

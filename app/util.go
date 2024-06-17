@@ -22,7 +22,10 @@ func MakeEncodingConfig() EncodingConfig {
 	interfaceRegistry := types.NewInterfaceRegistry()
 	cdc := codec.NewProtoCodec(interfaceRegistry)
 	cdc.InterfaceRegistry().RegisterImplementations((*sdk.Msg)(nil), &btclightclient.MsgSubmitBlockHeaderRequest{})
-	cdc.InterfaceRegistry().RegisterImplementations((*sdk.Msg)(nil), &btclightclient.MsgUpdateSendersRequest{})
+	cdc.InterfaceRegistry().RegisterImplementations((*sdk.Msg)(nil), &btclightclient.MsgUpdateQualifiedRelayersRequest{})
+	cdc.InterfaceRegistry().RegisterImplementations((*sdk.Msg)(nil), &btclightclient.MsgSubmitWithdrawSignaturesRequest{})
+	cdc.InterfaceRegistry().RegisterImplementations((*sdk.Msg)(nil), &btclightclient.MsgSubmitDepositTransactionRequest{})
+	cdc.InterfaceRegistry().RegisterImplementations((*sdk.Msg)(nil), &btclightclient.MsgSubmitWithdrawTransactionRequest{})
 
 	encCfg := EncodingConfig{
 		InterfaceRegistry: interfaceRegistry,
