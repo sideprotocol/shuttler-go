@@ -146,15 +146,8 @@ func (a *State) QueryAndCheckLightClientPermission() (*btclightclient.QueryParam
 		return nil, err
 	}
 
-	// Check if the sender is in the list of authorized senders
-	authorized := false
-	for _, sender := range res.Params.QualifiedRelayers {
-		if sender == a.Config.Side.Sender {
-			authorized = true
-			break
-		}
-	}
-
+	// Check if the sender is authorized relayer
+	authorized := res.Params.IsAuthorizedSender(a.Config.Side.Sender)
 	if !authorized {
 		panic(fmt.Sprintf("\n\nYou (%s) are not authorized to send bitcoin blocks to the sidechain.", a.Config.Side.Sender))
 	}
