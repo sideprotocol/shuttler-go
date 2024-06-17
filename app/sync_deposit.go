@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -54,10 +55,22 @@ func (a *State) ScanVaultTx(current int32) error {
 	uBlock := btcutil.NewBlock(block)
 	for i, tx := range uBlock.Transactions() {
 		// check if the transaction is a withdraw transaction
-		for _, txIn := range tx.MsgTx().TxIn {
-			// check if the transaction is spending from the vault
-			// Submit the transaction to the sidechain
-			a.Log.Debug("Checking if the transaction is a withdraw transaction", zap.Int("index", i), zap.String("tx", txIn.PreviousOutPoint.String()))
+		// check if the transaction is spending from the vault
+		// Submit the transaction to the sidechain
+		a.Log.Debug("Checking if the transaction is a withdraw transaction", zap.Int("index", i), zap.String("tx", tx.Hash().String()))
+
+		if len(tx.MsgTx().TxIn) > 0 && len(tx.MsgTx().TxIn[0].Witness) == 2 {
+			senderPubKey := tx.MsgTx().TxIn[0].Witness[1]
+
+			vault := btcbridge.SelectVaultByPubKey(a.params.Vaults, hex.EncodeToString(senderPubKey))
+			if vault == nil {
+				break
+			}
+
+			err = a.SubmitWithdrawalTx(blockhash, tx, uBlock.Transactions())
+			if err != nil {
+				return err
+			}
 		}
 
 		// check if the transaction is a deposit transaction
@@ -90,8 +103,8 @@ func (a *State) ScanVaultTx(current int32) error {
 // Submit Deposit Transaction to Sidechain
 func (a *State) SubmitDepositTx(blockhash *chainhash.Hash, tx *btcutil.Tx, txs []*btcutil.Tx) error {
 
-	// Check if the transaction has more than 1 input
-	// If it does, it's not a deposit transaction
+	// Check if the transaction has at least 1 input
+	// If not, it's not a deposit transaction
 	if len(tx.MsgTx().TxIn) < 1 {
 		return nil
 	}
