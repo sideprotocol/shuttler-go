@@ -120,34 +120,38 @@ func (a *State) SyncWithdrawalTxns() {
 }
 
 func signPSBT(packet *psbt.Packet, wif string) (*psbt.Packet, error) {
-	// Decode the private key
+	// // Decode the private key
 	// privKeyWIF, err := btcutil.DecodeWIF(wif)
 	// if err != nil {
 	// 	return nil, fmt.Errorf("failed to decode WIF: %v", err)
 	// }
 	// privKey := privKeyWIF.PrivKey
 
-	// Sign each input
+	// // Create a Secp256k1 context
+	// secp := btcec.S256()
+
+	// // Sign each input
 	// for i := range packet.Inputs {
-	// sigHashes := txscript.NewTxSigHashes(packet.UnsignedTx, p)
+	// 	txscript.
+	// 	sigHashes := txscript.NewTxSigHashes(packet.UnsignedTx, inputfeters)
 
-	// // Calculate the signature hash for the input
-	// sigHash, err := txscript.CalcWitnessSigHash(packet.Inputs[i].WitnessUtxo.PkScript, sigHashes, txscript.SigHashAll, packet.UnsignedTx, i, packet.Inputs[i].WitnessUtxo.Value)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to calculate signature hash: %v", err)
-	// }
+	// 	// Calculate the signature hash for the input
+	// 	sigHash, err := txscript.CalcWitnessSigHash(packet.Inputs[i].WitnessUtxo.PkScript, sigHashes, txscript.SigHashAll, packet.UnsignedTx, i, int64(packet.Inputs[i].WitnessUtxo.Value))
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("failed to calculate signature hash: %v", err)
+	// 	}
 
-	// // Sign the hash
-	// signature, err := privKey.Sign(sigHash)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to sign hash: %v", err)
-	// }
+	// 	// Sign the hash
+	// 	signature, err := privKey.Sign(sigHash)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("failed to sign hash: %v", err)
+	// 	}
 
-	// Add the signature to the PSBT
-	// packet.Inputs[i].PartialSigs = append(packet.Inputs[i].PartialSigs, psbt.PartialSig{
-	// 	PubKey:    privKey.PubKey().SerializeCompressed(),
-	// 	Signature: append(signature.Serialize(), byte(txscript.SigHashAll)),
-	// })
+	// 	// Add the signature to the PSBT
+	// 	packet.Inputs[i].PartialSigs = append(packet.Inputs[i].PartialSigs, psbt.PartialSig{
+	// 		PubKey:    privKey.PubKey().SerializeCompressed(),
+	// 		Signature: append(signature.Serialize(), byte(txscript.SigHashAll)),
+	// 	})
 	// }
 
 	return packet, nil
