@@ -1,8 +1,12 @@
 package app
 
 import (
+	"encoding/hex"
+
 	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	btcbridge "github.com/sideprotocol/side/x/btcbridge/types"
 	"go.uber.org/zap"
 )
@@ -208,4 +212,88 @@ func (a *State) SubmitBlock(blocks []*btcjson.GetBlockHeaderVerboseResult) {
 
 		a.ScanVaultTx(block.Height)
 	}
+}
+
+// Scan the transanctions in the block
+// Check if the transaction is a deposit/withdraw transaction
+// If it is, submit the transaction to the sidechain
+// This block should be confirmed
+func (a *State) ScanVaultTx(current int32) error {
+
+	height := current - a.params.Confirmations
+	if height == current {
+		height = current - 6
+	}
+
+	a.Log.Info("Scanning block", zap.Int32("height", height), zap.Int32("current", current))
+	// _, bestHeight, err := a.()
+	// if err != nil {
+	// 	return err
+	// }
+	lightClientTip, err := a.QueryChainTip()
+	if err != nil {
+		a.Log.Error("Failed to query light client chain tip", zap.Error(err))
+		return nil
+	}
+
+	// check if the block is already confirmed
+	// if not, return, because sidechain is instant finality,
+	// have to wait for the block to be confirmed
+	if height < int32(lightClientTip.Height)-a.params.Confirmations {
+		return nil
+	}
+
+	// process block
+	blockhash, err := a.rpc.GetBlockHash(int64(height))
+	if err != nil {
+		return err
+	}
+	block, err := a.rpc.GetBlock(blockhash)
+	if err != nil {
+		return err
+	}
+	uBlock := btcutil.NewBlock(block)
+	for i, tx := range uBlock.Transactions() {
+		// check if the transaction is a withdraw transaction
+		// check if the transaction is spending from the vault
+		// Submit the transaction to the sidechain
+		a.Log.Debug("Checking if the transaction is a withdraw transaction", zap.Int("index", i), zap.String("tx", tx.Hash().String()))
+
+		if len(tx.MsgTx().TxIn) > 0 && len(tx.MsgTx().TxIn[0].Witness) == 2 {
+			senderPubKey := tx.MsgTx().TxIn[0].Witness[1]
+
+			vault := btcbridge.SelectVaultByPubKey(a.params.Vaults, hex.EncodeToString(senderPubKey))
+			if vault != nil {
+				err = a.SubmitWithdrawalTx(blockhash, tx, uBlock.Transactions())
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		// check if the transaction is a deposit transaction
+		for _, txOut := range tx.MsgTx().TxOut {
+
+			pkScript, err := txscript.ParsePkScript(txOut.PkScript)
+			if err != nil {
+				continue
+			}
+			addr, err := pkScript.Address(a.GetChainCfg())
+			if err != nil {
+				continue
+			}
+
+			vault := btcbridge.SelectVaultByBitcoinAddress(a.params.Vaults, addr.String())
+			if vault == nil {
+				continue
+			}
+
+			err = a.SubmitDepositTx(blockhash, tx, uBlock.Transactions())
+			if err != nil {
+				return err
+			}
+		}
+
+	}
+	return nil
 }
