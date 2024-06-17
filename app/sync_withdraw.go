@@ -10,6 +10,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 
 	btcbridge "github.com/sideprotocol/side/x/btcbridge/types"
@@ -121,7 +122,35 @@ func (a *State) SyncWithdrawalTxns() {
 			continue
 		}
 	}
+}
 
+// Submit Withdrawal Transaction to Sidechain
+func (a *State) SubmitWithdrawalTx(blockhash *chainhash.Hash, tx *btcutil.Tx, txs []*btcutil.Tx) error {
+
+	// Check if the transaction has at least 1 input
+	// If not, it's not a withdrawal transaction
+	if len(tx.MsgTx().TxIn) < 1 {
+		return nil
+	}
+
+	var buf bytes.Buffer
+	tx.MsgTx().Serialize(&buf)
+
+	// Calulate the in
+	proof := GenerateMerkleProof(txs, tx.Hash())
+
+	withdrawalTx := &btcbridge.MsgSubmitWithdrawTransactionRequest{
+		Sender:    a.Config.Side.Sender,
+		Blockhash: blockhash.String(),
+		TxBytes:   base64.StdEncoding.EncodeToString(buf.Bytes()),
+		Proof:     proof,
+	}
+
+	a.Log.Debug("Transaction submitted",
+		zap.Any("Tx", withdrawalTx),
+	)
+
+	return a.SendSideTx(withdrawalTx)
 }
 
 func signPSBT(packet *psbt.Packet, wif string) (*psbt.Packet, error) {
