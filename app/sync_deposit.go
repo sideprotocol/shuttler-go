@@ -63,13 +63,11 @@ func (a *State) ScanVaultTx(current int32) error {
 			senderPubKey := tx.MsgTx().TxIn[0].Witness[1]
 
 			vault := btcbridge.SelectVaultByPubKey(a.params.Vaults, hex.EncodeToString(senderPubKey))
-			if vault == nil {
-				break
-			}
-
-			err = a.SubmitWithdrawalTx(blockhash, tx, uBlock.Transactions())
-			if err != nil {
-				return err
+			if vault != nil {
+				err = a.SubmitWithdrawalTx(blockhash, tx, uBlock.Transactions())
+				if err != nil {
+					return err
+				}
 			}
 		}
 
