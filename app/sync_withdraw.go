@@ -4,10 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	btcbridge "github.com/sideprotocol/side/x/btcbridge/types"
 	"go.uber.org/zap"
+
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/txscript"
+
+	btcbridge "github.com/sideprotocol/side/x/btcbridge/types"
 )
 
 // SignWithdrawalTxns signs the withdrawal transactions
@@ -120,39 +125,45 @@ func (a *State) SyncWithdrawalTxns() {
 }
 
 func signPSBT(packet *psbt.Packet, wif string) (*psbt.Packet, error) {
-	// // Decode the private key
-	// privKeyWIF, err := btcutil.DecodeWIF(wif)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to decode WIF: %v", err)
-	// }
-	// privKey := privKeyWIF.PrivKey
+	// Decode the private key
+	privKeyWIF, err := btcutil.DecodeWIF(wif)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode WIF: %v", err)
+	}
+	privKey := privKeyWIF.PrivKey
 
-	// // Create a Secp256k1 context
-	// secp := btcec.S256()
+	// build previous output fetcher
+	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(nil)
 
-	// // Sign each input
-	// for i := range packet.Inputs {
-	// 	txscript.
-	// 	sigHashes := txscript.NewTxSigHashes(packet.UnsignedTx, inputfeters)
+	for i, txIn := range packet.UnsignedTx.TxIn {
+		prevOutput := packet.Inputs[i].WitnessUtxo
+		if prevOutput == nil {
+			return nil, fmt.Errorf("witness utxo required")
+		}
 
-	// 	// Calculate the signature hash for the input
-	// 	sigHash, err := txscript.CalcWitnessSigHash(packet.Inputs[i].WitnessUtxo.PkScript, sigHashes, txscript.SigHashAll, packet.UnsignedTx, i, int64(packet.Inputs[i].WitnessUtxo.Value))
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("failed to calculate signature hash: %v", err)
-	// 	}
+		prevOutputFetcher.AddPrevOut(txIn.PreviousOutPoint, prevOutput)
+	}
 
-	// 	// Sign the hash
-	// 	signature, err := privKey.Sign(sigHash)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("failed to sign hash: %v", err)
-	// 	}
+	// sign and finalize inputs
+	for i := range packet.Inputs {
+		output := packet.Inputs[i].WitnessUtxo
+		hashType := packet.Inputs[i].SighashType
 
-	// 	// Add the signature to the PSBT
-	// 	packet.Inputs[i].PartialSigs = append(packet.Inputs[i].PartialSigs, psbt.PartialSig{
-	// 		PubKey:    privKey.PubKey().SerializeCompressed(),
-	// 		Signature: append(signature.Serialize(), byte(txscript.SigHashAll)),
-	// 	})
-	// }
+		witness, err := txscript.WitnessSignature(packet.UnsignedTx, txscript.NewTxSigHashes(packet.UnsignedTx, prevOutputFetcher),
+			i, output.Value, output.PkScript, hashType, privKey, true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate witness: %v", err)
+		}
+
+		packet.Inputs[i].PartialSigs = append(packet.Inputs[i].PartialSigs, &psbt.PartialSig{
+			PubKey:    witness[1],
+			Signature: witness[0],
+		})
+
+		if err := psbt.Finalize(packet, i); err != nil {
+			return nil, fmt.Errorf("failed to finalize: %v", err)
+		}
+	}
 
 	return packet, nil
 }
