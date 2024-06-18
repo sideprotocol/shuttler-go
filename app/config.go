@@ -39,7 +39,6 @@ type Bitcoin struct {
 
 	VaultAddress string `toml:"vault-address"          comment:"Vault address for the transaction"`
 	VaultSigner  bool   `toml:"vault-signer"           comment:"Enable vault signer to sign the transaction, only used for testing"`
-	VaultWIF     string `toml:"vault-mnemonic"         comment:"Vault mnemonic for the transaction, only used for testing"`
 }
 
 type Side struct {
@@ -69,7 +68,6 @@ func defaultConfig(network string) *Config {
 			ZMQHost:      "signet",
 			ZMQPort:      38330,
 			VaultSigner:  false,
-			VaultWIF:     "",
 		},
 		Side: Side{
 			RPC:       "http://localhost:26657",
@@ -77,7 +75,7 @@ func defaultConfig(network string) *Config {
 			GRPC:      "localhost:9090",
 			Frequency: 6,
 			Sender:    "",
-			ChainID:   "S2-testnet-1",
+			ChainID:   "devnet",
 			Gas:       2000000,
 		},
 	}

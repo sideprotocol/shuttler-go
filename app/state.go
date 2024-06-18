@@ -232,6 +232,7 @@ func (a *State) SendSideTx(msg sdk.Msg) error {
 	txf = txf.WithTxConfig(encodingConfig.TxConfig)
 	txf = txf.WithAccountNumber(account.AccountNumber)
 	txf = txf.WithSequence(account.Sequence)
+	txf = txf.WithChainID(a.Config.Side.ChainID)
 
 	err = tx.Sign(txf, InternalKeyringName, txBuilder, true)
 	if err != nil {
