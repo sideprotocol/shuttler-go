@@ -12,6 +12,8 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
+	crypto "github.com/cosmos/cosmos-sdk/crypto"
+	secpv4 "github.com/decred/dcrd/dcrec/secp256k1/v4"
 
 	btcbridge "github.com/sideprotocol/side/x/btcbridge/types"
 )
@@ -19,12 +21,8 @@ import (
 // SignWithdrawalTxns signs the withdrawal transactions
 func (a *State) SignWithdrawalTxns() {
 
+	// Ensure relayer is enabled as a vault signer
 	if !a.Config.Bitcoin.VaultSigner {
-		return
-	}
-
-	if len(a.Config.Bitcoin.VaultWIF) == 0 {
-		a.Log.Error("No WIF found")
 		return
 	}
 
@@ -38,6 +36,21 @@ func (a *State) SignWithdrawalTxns() {
 	if err != nil {
 		return
 	}
+
+	encrypted, err := a.txFactory.Keybase().ExportPrivKeyArmor(InternalKeyringName, "")
+	if err != nil {
+		a.Log.Error("Failed to export private key", zap.Error(err))
+		return
+	}
+
+	privKey, _, err := crypto.UnarmorDecryptPrivKey(encrypted, "")
+	if err != nil {
+		a.Log.Error("Failed to decrypt private key", zap.Error(err))
+		return
+	}
+
+	keyBytes := privKey.Bytes()
+	priv := secpv4.PrivKeyFromBytes(keyBytes)
 
 	for _, r := range res.Requests {
 
@@ -53,7 +66,7 @@ func (a *State) SignWithdrawalTxns() {
 			continue
 		}
 
-		packet, err = signPSBT(packet, a.Config.Bitcoin.VaultWIF)
+		packet, err = signPSBT(packet, priv)
 		if err != nil {
 			a.Log.Error("Failed to sign transaction", zap.Error(err))
 			continue
@@ -153,13 +166,7 @@ func (a *State) SubmitWithdrawalTx(blockhash *chainhash.Hash, tx *btcutil.Tx, tx
 	return a.SendSideTx(withdrawalTx)
 }
 
-func signPSBT(packet *psbt.Packet, wif string) (*psbt.Packet, error) {
-	// Decode the private key
-	privKeyWIF, err := btcutil.DecodeWIF(wif)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode WIF: %v", err)
-	}
-	privKey := privKeyWIF.PrivKey
+func signPSBT(packet *psbt.Packet, privKey *secpv4.PrivateKey) (*psbt.Packet, error) {
 
 	// build previous output fetcher
 	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(nil)
