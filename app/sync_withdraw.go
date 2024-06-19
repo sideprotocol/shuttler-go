@@ -85,14 +85,13 @@ func (a *State) SignWithdrawalTxns() {
 			continue
 		}
 
-		client := btcbridge.NewMsgClient(a.gRPC)
-		_, err = client.SubmitWithdrawSignatures(ctx, &btcbridge.MsgSubmitWithdrawSignaturesRequest{
+		signingTx := &btcbridge.MsgSubmitWithdrawSignaturesRequest{
 			Sender: a.Config.Side.Sender,
 			Txid:   r.Txid,
 			Psbt:   base64.StdEncoding.EncodeToString(w.Bytes()),
-		})
+		}
 
-		if err != nil {
+		if err = a.SendSideTx(signingTx); err != nil {
 			a.Log.Error("Failed to submit transaction", zap.Error(err))
 		}
 	}
