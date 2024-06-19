@@ -1,14 +1,20 @@
 package app_test
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/sideprotocol/shuttler/app"
 	"github.com/stretchr/testify/require"
+
+	btcbridge "github.com/sideprotocol/side/x/btcbridge/types"
 )
 
 // var hash = bitcoin.HashMerkleBranches
@@ -16,7 +22,7 @@ import (
 func TestMerkleProof(t *testing.T) {
 
 	cfg := &rpcclient.ConnConfig{
-		Host:         "signet:18332",
+		Host:         "signet:38332",
 		User:         "side",
 		Pass:         "12345678",
 		HTTPPostMode: true,
@@ -43,7 +49,7 @@ func TestMerkleProof(t *testing.T) {
 	// 2000+: 000000000000000c1a466a706ffa3f82dfd7caf9db8796e76eb84b7c226b1926
 	// 6000+: 000000000000000d04a51353ad3a630ae352105ffac54a56092084042a5ecb2d
 
-	bh, _ := chainhash.NewHashFromStr("000000000000000c1a466a706ffa3f82dfd7caf9db8796e76eb84b7c226b1926")
+	bh, _ := chainhash.NewHashFromStr("000001d36a0074bd4ec73f19dadc6a2df1c7b049daff568e0346c06ea1297e8e")
 
 	block, err := client.GetBlock(bh)
 	if err != nil {
@@ -53,7 +59,7 @@ func TestMerkleProof(t *testing.T) {
 	uBlock := btcutil.NewBlock(block)
 
 	// Target hash to produce a proof for
-	index := len(uBlock.Transactions()) - 3
+	index := 1
 	// index := 0
 	if index < 0 {
 		index = 0
@@ -68,9 +74,36 @@ func TestMerkleProof(t *testing.T) {
 	}
 
 	// Verify the proof
-	verified := app.VerifyMerkleProof(proof, hn.Hash(), &uBlock.MsgBlock().Header.MerkleRoot)
+	verified := btcbridge.VerifyMerkleProof(proof, hn.Hash(), &uBlock.MsgBlock().Header.MerkleRoot)
 
 	// root := blockchain.CalcMerkleRoot(uBlock.Transactions(), false)
 	// println("Merkle Root:", uBlock.MsgBlock().Header.MerkleRoot.String(), root.String())
 	require.True(t, verified, true)
+}
+
+func TestVerifyMerkleProof(t *testing.T) {
+	blockhash := "000001d36a0074bd4ec73f19dadc6a2df1c7b049daff568e0346c06ea1297e8e"
+	prev_tx_bytes := "AgAAAAABAevDxNveDbepIJNLRMYvkWnj2MzgyCkIVFQ8F8mi6x/gAAAAAAD9////AnYrdegAAAAAFgAUIjr3Q9KscxPt+jMbXoYTqyyYZ1QAypo7AAAAABYAFKxDJtIA6Z8jP10orEug89GURQ0UAkcwRAIgWiLPeRS7P+sSn6kUPCZ7rG/d7n7g6cBPHZkddpplhlkCIDzDNeYWc9J97EqTMRQZUpXMUwDbf973vhXTvp6R77jvASEDv3a9fVj89tUbSNXT48PaRBv5hyPmifcYzOIyXQcnRdVsDQAA"
+	tx_bytes, _ := base64.StdEncoding.DecodeString("AgAAAAABAQSVzKvNWYfNaKcoATilKGaLmVI0CrP4j/ZMs1VMQeQhAAAAAAD9////ArFT2qwAAAAAFgAUB5eO/CjAXpJ2Ae2MLoFGDLX3nYEAypo7AAAAABYAFKxDJtIA6Z8jP10orEug89GURQ0UAkcwRAIgAImsOfNq2DNSIc7yodeghW3eKxMczAjlREkG5Jr3KuUCIH2ziBDp1EQkeJnuaG59FrhhBr3ckqeT/3AVhE6ncRbwASEDeXnjDp/kmpIaas0+MAO6LqXykLlxFonl7Fv1Ar7hsqs/DQAA")
+	proof := []string{"AWalPumvpFKZCrC08j75LveGEn3OOVnQUPTYwqPrW5qI"}
+	root := "96d5f63826566294ab8b98f18f110c9ecea3bd95839f2af441b63ffea3387e2b"
+
+	println("blockhash:", blockhash)
+	println("prev_tx_bytes:", prev_tx_bytes)
+	println("tx_bytes:", tx_bytes)
+	tx := wire.NewMsgTx(2)
+	tx.Deserialize(bytes.NewReader(tx_bytes))
+	println("proof:", proof)
+	println("root:", root)
+
+	println("tx hash:", tx.TxHash().String())
+
+	bz, _ := hex.DecodeString(root)
+	txhash := tx.TxHash()
+	rootHash, _ := chainhash.NewHash(bz)
+	verfied := btcbridge.VerifyMerkleProof(proof, &txhash, rootHash)
+	require.True(t, verfied, true)
+
+	//app.VerifyMerkleProof()
+
 }

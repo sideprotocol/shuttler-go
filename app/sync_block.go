@@ -75,7 +75,11 @@ func (a *State) FastSyncLightClient() {
 		)
 
 		besthash, err := a.rpc.GetBestBlockHash()
-		if besthash.String() == block.Hash || err != nil {
+		if err != nil {
+			a.Log.Error("Failed to get best block hash", zap.Error(err))
+			return
+		}
+		if besthash.String() == block.Hash {
 			a.synced = true
 			a.Log.Info("Reached the best block")
 			return
