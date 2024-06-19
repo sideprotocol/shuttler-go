@@ -37,6 +37,12 @@ func (a *State) SignWithdrawalTxns() {
 		return
 	}
 
+	a.Log.Info("Syncing withdrawal transactions", zap.Int("count", len(res.Requests)))
+
+	if len(res.Requests) == 0 {
+		return
+	}
+
 	encrypted, err := a.txFactory.Keybase().ExportPrivKeyArmor(InternalKeyringName, "")
 	if err != nil {
 		a.Log.Error("Failed to export private key", zap.Error(err))
@@ -94,6 +100,7 @@ func (a *State) SignWithdrawalTxns() {
 
 // SyncWithdrawalTxns sends the withdrawal transactions to the bitcoin network
 func (a *State) SyncWithdrawalTxns() {
+
 	// Timeout context for our queries
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancel()
@@ -104,6 +111,8 @@ func (a *State) SyncWithdrawalTxns() {
 	if err != nil {
 		return
 	}
+
+	a.Log.Info("Syncing withdrawal transactions", zap.Int("count", len(res.Requests)))
 
 	for _, r := range res.Requests {
 		b, err := base64.StdEncoding.DecodeString(r.Psbt)

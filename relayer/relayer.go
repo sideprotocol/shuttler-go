@@ -54,6 +54,7 @@ func Start(a *app.State) {
 			a.Log.Info("Exiting...")
 			return
 		case <-ticker.C:
+			a.SignWithdrawalTxns()
 			a.SyncWithdrawalTxns()
 		}
 	}

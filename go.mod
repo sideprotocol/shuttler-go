@@ -18,6 +18,7 @@ require (
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/cosmos/cosmos-sdk v0.47.9
 	github.com/cosmos/go-bip39 v1.0.0
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0
 	github.com/stretchr/testify v1.8.4
 	google.golang.org/grpc v1.60.1
 )
@@ -59,7 +60,6 @@ require (
 	github.com/danieljoos/wincred v1.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.0.1 // indirect
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
 	github.com/dgraph-io/badger/v2 v2.2007.4 // indirect
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
