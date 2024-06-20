@@ -142,10 +142,20 @@ func (a *State) SyncWithdrawalTxns() {
 			a.Log.Error("Failed to broadcast transaction", zap.Error(err))
 			continue
 		}
+
+		signingTx := &btcbridge.MsgSubmitWithdrawStatusRequest{
+			Sender: a.Config.Side.Sender,
+			Txid:   r.Txid,
+			Status: btcbridge.SigningStatus_SIGNING_STATUS_BROADCASTED,
+		}
+
+		if err = a.SendSideTx(signingTx); err != nil {
+			a.Log.Error("Failed to submit transaction", zap.Error(err))
+		}
 	}
 }
 
-// Submit Withdrawal Transaction to Sidechain
+// Submit Withdrawal Transaction to Sidechain to close the withdrawal and burn the tokens
 func (a *State) SubmitWithdrawalTx(blockhash *chainhash.Hash, tx *btcutil.Tx, txs []*btcutil.Tx) error {
 
 	// Check if the transaction has at least 1 input
