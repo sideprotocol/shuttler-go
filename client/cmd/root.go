@@ -16,7 +16,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/cosmos/cosmos-sdk/client/keys"
-	"github.com/cosmos/cosmos-sdk/version"
 	"github.com/sideprotocol/shuttler/app"
 )
 
@@ -92,7 +91,7 @@ func NewRootCmd(log *zap.Logger) *cobra.Command {
 		keys.Commands(app.DefaultHome),
 		NewInitCommand(),
 		NewStartCommand(a),
-		version.NewVersionCommand(),
+		NewVersionCommand(),
 	)
 
 	return rootCmd
