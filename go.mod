@@ -5,7 +5,7 @@ go 1.22.3
 require (
 	github.com/ordishs/go-bitcoin v1.0.86
 	github.com/pelletier/go-toml/v2 v2.0.8
-	github.com/sideprotocol/side v0.47.116
+	github.com/sideprotocol/side v0.9.0-rc0
 	github.com/spf13/cobra v1.7.0
 	github.com/spf13/viper v1.16.0
 	go.uber.org/zap v1.23.0
@@ -149,11 +149,11 @@ require (
 
 replace (
 	github.com/btcsuite/btcd/btcutil/btcscript => github.com/btcsuite/txscript v1.1.5
-	github.com/cosmos/cosmos-sdk => ../cosmos-sdk
+	// github.com/cosmos/cosmos-sdk => ../cosmos-sdk
 	github.com/cosmos/cosmos-sdk/simapp => cosmos-sdk.io/simapp v0.47.9
 	// github.com/cosmos/cosmos-sdk => github.com/sideprotocol/cosmos-sdk v0.47.115
 	github.com/cosmos/interchain-security/v3 => github.com/Stride-Labs/interchain-security/v3 v3.1.0-remove-validation-bug-7d3d9d
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
-	github.com/sideprotocol/side => ../side
+	// github.com/sideprotocol/side => ../side
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )
