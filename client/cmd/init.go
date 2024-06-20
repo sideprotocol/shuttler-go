@@ -1,7 +1,10 @@
 package cmd
 
 import (
-	"github.com/pelletier/go-toml/v2"
+	"bufio"
+	"os"
+	"strings"
+
 	"github.com/sideprotocol/shuttler/app"
 	"github.com/spf13/cobra"
 )
@@ -18,18 +21,35 @@ func NewInitCommand() *cobra.Command {
 				return err
 			}
 
-			cb := app.NewConfigBuilder(home)
-			cfg := cb.InitConfig()
-			println("Configuration file created at: ", cb.ConfigFilePath())
-
-			out, err := toml.Marshal(*cfg)
+			network, err := cmd.Flags().GetString("network")
 			if err != nil {
 				return err
 			}
-			println(string(out))
+
+			generate, err := cmd.Flags().GetBool("generate")
+			if err != nil {
+				return err
+			}
+			mnemonic := ""
+			if !generate {
+				println("Please input your mnemonic: ")
+				reader := bufio.NewReader(os.Stdin)
+				mnemonic, err = reader.ReadString('\n')
+				if err != nil {
+					return err
+				}
+			}
+
+			cb := app.NewConfigBuilder(home)
+			cb.InitConfig(strings.TrimSpace(mnemonic), network)
+			println("\nConfiguration file created at: ", cb.ConfigFilePath())
+
 			return nil
 		},
 	}
+
+	cmd.PersistentFlags().Bool("generate", false, "Generate a new mnemonic for the keyring instead of recovering an existing one")
+	cmd.PersistentFlags().String("network", "mainnet", "The network to use (mainnet, testnet, regtest, simnet)")
 
 	return cmd
 }

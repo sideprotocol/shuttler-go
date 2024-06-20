@@ -32,7 +32,7 @@ const (
 func NewRootCmd(log *zap.Logger) *cobra.Command {
 	// Use a local app state instance scoped to the new root command,
 	// so that tests don't concurrently access the state.
-	a := app.NewAppState("")
+	var a = app.NewAppState("")
 
 	// RootCmd represents the base command when called without any subcommands
 	var rootCmd = &cobra.Command{
@@ -42,21 +42,26 @@ func NewRootCmd(log *zap.Logger) *cobra.Command {
 	}
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+
+		// Skip loading configuration for `init` and `version` commands.
+		if cmd.Name() == "init" || cmd.Name() == "version" {
+			return nil
+		}
+
 		// Inside persistent pre-run because this takes effect after flags are parsed.
 		// reads `homeDir/config/config.yaml` into `a.Config`
-		if err := a.LoadConfigFile(rootCmd.Context()); err != nil {
+		if err := a.Init(); err != nil {
 			return err
 		}
-		// Inside persistent pre-run because this takes effect after flags are parsed.
-		if a.Log == nil {
-			a.InitLogger("info")
-		}
+
 		return nil
 	}
 
 	rootCmd.PersistentPostRun = func(cmd *cobra.Command, _ []string) {
 		// Force syncing the logs before exit, if anything is buffered.
-		_ = a.Log.Sync()
+		if a.Log != nil {
+			_ = a.Log.Sync()
+		}
 	}
 
 	// Register --home flag
