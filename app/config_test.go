@@ -7,7 +7,7 @@ import (
 func Test_Config(t *testing.T) {
 
 	cb := NewConfigBuilder(t.TempDir())
-	cfg := cb.InitConfig("", "mainnet")
+	cfg := cb.InitConfig("", nil, "mainnet", "")
 	if cfg.Global.LogLevel != "info" {
 		t.Errorf("Expected info, got %s", cfg.Global.LogLevel)
 	}

@@ -263,6 +263,7 @@ func (a *State) ScanVaultTx(current int32) error {
 		// Submit the transaction to the sidechain
 		a.Log.Debug("Checking if the transaction is a withdraw transaction", zap.Int("index", i), zap.String("tx", tx.Hash().String()))
 
+		// TODO: taproot
 		if len(tx.MsgTx().TxIn) > 0 && len(tx.MsgTx().TxIn[0].Witness) == 2 {
 			senderPubKey := tx.MsgTx().TxIn[0].Witness[1]
 
