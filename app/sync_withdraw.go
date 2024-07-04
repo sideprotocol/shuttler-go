@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -12,8 +13,11 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
-	crypto "github.com/cosmos/cosmos-sdk/crypto"
+	"github.com/btcsuite/btcd/wire"
 	secpv4 "github.com/decred/dcrd/dcrec/secp256k1/v4"
+
+	crypto "github.com/cosmos/cosmos-sdk/crypto"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	btcbridge "github.com/sideprotocol/side/x/btcbridge/types"
 )
@@ -21,8 +25,14 @@ import (
 // SignWithdrawalTxns signs the withdrawal transactions
 func (a *State) SignWithdrawalTxns() {
 
-	// Ensure relayer is enabled as a vault signer
-	if !a.Config.Bitcoin.VaultSigner {
+	// Ensure local signing is enabled
+	if !a.Config.Bitcoin.LocalSigning || len(a.Config.Bitcoin.Vaults) == 0 {
+		return
+	}
+
+	vaultPrivKeys, err := a.getVaultPrivKeys()
+	if err != nil {
+		a.Log.Error("Failed to get the vault private keys", zap.Error(err))
 		return
 	}
 
@@ -43,21 +53,6 @@ func (a *State) SignWithdrawalTxns() {
 		return
 	}
 
-	encrypted, err := a.txFactory.Keybase().ExportPrivKeyArmor(InternalKeyringName, "")
-	if err != nil {
-		a.Log.Error("Failed to export private key", zap.Error(err))
-		return
-	}
-
-	privKey, _, err := crypto.UnarmorDecryptPrivKey(encrypted, "")
-	if err != nil {
-		a.Log.Error("Failed to decrypt private key", zap.Error(err))
-		return
-	}
-
-	keyBytes := privKey.Bytes()
-	priv := secpv4.PrivKeyFromBytes(keyBytes)
-
 	for _, r := range res.Requests {
 
 		b, err := base64.StdEncoding.DecodeString(r.Psbt)
@@ -72,7 +67,7 @@ func (a *State) SignWithdrawalTxns() {
 			continue
 		}
 
-		packet, err = signPSBT(packet, priv)
+		packet, err = signPsbt(packet, vaultPrivKeys)
 		if err != nil {
 			a.Log.Error("Failed to sign transaction", zap.Error(err))
 			continue
@@ -184,10 +179,44 @@ func (a *State) SubmitWithdrawalTx(blockhash *chainhash.Hash, tx *btcutil.Tx, tx
 	return a.SendSideTx(withdrawalTx)
 }
 
-func signPSBT(packet *psbt.Packet, privKey *secpv4.PrivateKey) (*psbt.Packet, error) {
+func (a *State) getVaultPrivKeys() (map[string]*secpv4.PrivateKey, error) {
+	privKeys := make(map[string]*secpv4.PrivateKey, len(a.Config.Bitcoin.Vaults))
+
+	for _, vault := range a.Config.Bitcoin.Vaults {
+		addr, err := btcutil.DecodeAddress(vault, a.GetChainCfg())
+		if err != nil {
+			a.Log.Error("Failed to decode address", zap.Error(err))
+			return nil, err
+		}
+
+		pkScript, err := txscript.PayToAddrScript(addr)
+		if err != nil {
+			a.Log.Error("Failed to get pk script", zap.Error(err))
+			return nil, err
+		}
+
+		encrypted, err := a.txFactory.Keybase().ExportPrivKeyArmorByAddress(sdk.MustAccAddressFromBech32(vault), "")
+		if err != nil {
+			a.Log.Error("Failed to export private key", zap.Error(err))
+			return nil, err
+		}
+
+		privKey, _, err := crypto.UnarmorDecryptPrivKey(encrypted, "")
+		if err != nil {
+			a.Log.Error("Failed to decrypt private key", zap.Error(err))
+			return nil, err
+		}
+
+		privKeys[hex.EncodeToString(pkScript)] = secpv4.PrivKeyFromBytes(privKey.Bytes())
+	}
+
+	return privKeys, nil
+}
+
+func signPsbt(packet *psbt.Packet, privKeys map[string]*secpv4.PrivateKey) (*psbt.Packet, error) {
 
 	// build previous output fetcher
-	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(nil)
+	prevOutFetcher := txscript.NewMultiPrevOutFetcher(nil)
 
 	for i, txIn := range packet.UnsignedTx.TxIn {
 		prevOutput := packet.Inputs[i].WitnessUtxo
@@ -195,29 +224,61 @@ func signPSBT(packet *psbt.Packet, privKey *secpv4.PrivateKey) (*psbt.Packet, er
 			return nil, fmt.Errorf("witness utxo required")
 		}
 
-		prevOutputFetcher.AddPrevOut(txIn.PreviousOutPoint, prevOutput)
+		prevOutFetcher.AddPrevOut(txIn.PreviousOutPoint, prevOutput)
 	}
 
 	// sign and finalize inputs
 	for i := range packet.Inputs {
-		output := packet.Inputs[i].WitnessUtxo
+		prevOut := packet.Inputs[i].WitnessUtxo
 		hashType := packet.Inputs[i].SighashType
 
-		witness, err := txscript.WitnessSignature(packet.UnsignedTx, txscript.NewTxSigHashes(packet.UnsignedTx, prevOutputFetcher),
-			i, output.Value, output.PkScript, hashType, privKey, true)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate witness: %v", err)
+		privKey, ok := privKeys[hex.EncodeToString(prevOut.PkScript)]
+		if !ok {
+			return nil, fmt.Errorf("no key found for input %d", i)
 		}
 
-		packet.Inputs[i].PartialSigs = append(packet.Inputs[i].PartialSigs, &psbt.PartialSig{
-			PubKey:    witness[1],
-			Signature: witness[0],
-		})
+		if err := signPsbtInput(packet, i, prevOut, prevOutFetcher, hashType, privKey); err != nil {
+			return nil, err
+		}
 
 		if err := psbt.Finalize(packet, i); err != nil {
-			return nil, fmt.Errorf("failed to finalize: %v", err)
+			return nil, fmt.Errorf("failed to finalize input %d: %v", i, err)
 		}
 	}
 
 	return packet, nil
+}
+
+// signPsbtInput signs the given psbt input
+// make sure that the input is witness type
+func signPsbtInput(packet *psbt.Packet, idx int, prevOut *wire.TxOut, prevOutFetcher txscript.PrevOutputFetcher, hashType txscript.SigHashType, privKey *secpv4.PrivateKey) error {
+	switch {
+	case txscript.IsPayToWitnessPubKeyHash(prevOut.PkScript):
+		// native segwit
+		witness, err := txscript.WitnessSignature(packet.UnsignedTx, txscript.NewTxSigHashes(packet.UnsignedTx, prevOutFetcher),
+			idx, prevOut.Value, prevOut.PkScript, hashType, privKey, true)
+		if err != nil {
+			return fmt.Errorf("failed to generate witness: %v", err)
+		}
+
+		packet.Inputs[idx].PartialSigs = append(packet.Inputs[idx].PartialSigs, &psbt.PartialSig{
+			PubKey:    witness[1],
+			Signature: witness[0],
+		})
+
+	case txscript.IsPayToTaproot(prevOut.PkScript):
+		// taproot
+		witness, err := txscript.TaprootWitnessSignature(packet.UnsignedTx, txscript.NewTxSigHashes(packet.UnsignedTx, prevOutFetcher),
+			idx, prevOut.Value, prevOut.PkScript, hashType, privKey)
+		if err != nil {
+			return fmt.Errorf("failed to generate witness: %v", err)
+		}
+
+		packet.Inputs[idx].TaprootKeySpendSig = witness[0]
+
+	default:
+		return fmt.Errorf("not supported script type")
+	}
+
+	return nil
 }

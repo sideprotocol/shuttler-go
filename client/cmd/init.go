@@ -26,13 +26,18 @@ func NewInitCommand() *cobra.Command {
 				return err
 			}
 
+			keyType, err := cmd.Flags().GetString("key-type")
+			if err != nil {
+				return err
+			}
+
 			generate, err := cmd.Flags().GetBool("generate")
 			if err != nil {
 				return err
 			}
 			mnemonic := ""
 			if !generate {
-				println("Please input your mnemonic: ")
+				println("Please input relayer mnemonic: ")
 				reader := bufio.NewReader(os.Stdin)
 				mnemonic, err = reader.ReadString('\n')
 				if err != nil {
@@ -40,8 +45,23 @@ func NewInitCommand() *cobra.Command {
 				}
 			}
 
+			localVaultEnabled, err := cmd.Flags().GetBool("local-vault")
+			if err != nil {
+				return err
+			}
+
+			mVaults := make([]string, 0)
+
+			if localVaultEnabled {
+				println("Please input vault mnemonics, end with Ctrl+D")
+				scanner := bufio.NewScanner(os.Stdin)
+				for scanner.Scan() {
+					mVaults = append(mVaults, strings.TrimSpace(scanner.Text()))
+				}
+			}
+
 			cb := app.NewConfigBuilder(home)
-			cb.InitConfig(strings.TrimSpace(mnemonic), network)
+			cb.InitConfig(strings.TrimSpace(mnemonic), mVaults, network, strings.TrimSpace(keyType))
 			println("\nConfiguration file created at: ", cb.ConfigFilePath())
 
 			return nil
@@ -50,6 +70,8 @@ func NewInitCommand() *cobra.Command {
 
 	cmd.PersistentFlags().Bool("generate", false, "Generate a new mnemonic for the keyring instead of recovering an existing one")
 	cmd.PersistentFlags().String("network", "mainnet", "The network to use (mainnet, testnet, regtest, simnet)")
+	cmd.PersistentFlags().String("key-type", "segwit", "The key type (segwit, taproot)")
+	cmd.PersistentFlags().Bool("local-vault", false, "Enable local vault for testing")
 
 	return cmd
 }
