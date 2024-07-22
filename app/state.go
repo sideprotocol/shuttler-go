@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
@@ -60,6 +61,9 @@ type State struct {
 	gRPC            *grpc.ClientConn
 	grpcQueryClient btclightclient.QueryClient
 	txServiceClient txtypes.ServiceClient
+
+	// lock
+	mu sync.Mutex
 }
 
 // NewState creates a new State object.
@@ -169,6 +173,8 @@ func (a *State) QuerySequence() (uint64, error) {
 // Query Cosmos Account Auth Info
 // Sequence number is incremented for each transaction
 func (a *State) queryAccountInfo() (*auth.BaseAccount, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	// Return the account if it's already loaded
 	// Increment the sequence number for each transaction
