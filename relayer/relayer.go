@@ -46,6 +46,8 @@ func Start(a *app.State) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
+	go handleWithdrawalTxnsLoop(a)
+
 	for {
 		select {
 		case c := <-btcChan:
@@ -54,11 +56,20 @@ func Start(a *app.State) {
 			a.Log.Info("Exiting...")
 			return
 		case <-ticker.C:
-			a.SignWithdrawalTxns()
-			a.SyncWithdrawalTxns()
+			// a.SignWithdrawalTxns()
+			// a.SyncWithdrawalTxns()
 		}
 	}
 	// return nil
+}
+
+func handleWithdrawalTxnsLoop(a *app.State) {
+	for {
+		a.SignWithdrawalTxns()
+		a.SyncWithdrawalTxns()
+
+		time.Sleep(6 * time.Second)
+	}
 }
 
 // func FetchTxns(a *app.State, client *zmqclient.Bitcoind) {
