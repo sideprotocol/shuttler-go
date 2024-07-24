@@ -17,7 +17,7 @@ func (a *State) SendSubmitBlockHeaderRequest(headers []*btcbridge.BlockHeader) e
 		Sender:       a.Config.Side.Sender,
 		BlockHeaders: headers,
 	}
-	return a.SendSideTx(msg)
+	return a.SendSideTxWithRetry(msg, a.Config.Side.Retries)
 }
 
 // Sync the light client with the bitcoin network

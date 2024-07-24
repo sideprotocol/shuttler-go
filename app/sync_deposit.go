@@ -66,5 +66,5 @@ func (a *State) SubmitDepositTx(blockhash *chainhash.Hash, tx *btcutil.Tx, txs [
 		zap.Any("Tx", depositTx),
 	)
 
-	return a.SendSideTx(depositTx)
+	return a.SendSideTxWithRetry(depositTx, a.Config.Side.Retries)
 }

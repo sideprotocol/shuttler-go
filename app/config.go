@@ -48,10 +48,12 @@ type Side struct {
 	RPC  string `toml:"rpc"                           comment:"Side RPC endpoint"`
 	REST string `toml:"rest"                          comment:"Side REST endpoint"`
 
-	Frequency int    `toml:"frequency"                 comment:"frequency of Side block polling in	seconds"`
+	Frequency int    `toml:"frequency"                 comment:"frequency of Side block polling in seconds"`
 	Sender    string `toml:"sender"                    comment:"Side sender address"`
 	ChainID   string `toml:"chain-id"                  comment:"Side chain ID"`
 	Gas       uint64 `toml:"gas"                       comment:"Side chain gas"`
+
+	Retries int `toml:"retries"                        comment:"retry count on failed"`
 }
 
 func defaultConfig(network string) *Config {
@@ -78,6 +80,7 @@ func defaultConfig(network string) *Config {
 			Sender:    "",
 			ChainID:   "devnet",
 			Gas:       2000000,
+			Retries:   5,
 		},
 	}
 }

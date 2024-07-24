@@ -86,7 +86,7 @@ func (a *State) SignWithdrawalTxns() {
 			Psbt:   base64.StdEncoding.EncodeToString(w.Bytes()),
 		}
 
-		if err = a.SendSideTx(signingTx); err != nil {
+		if err = a.SendSideTxWithRetry(signingTx, a.Config.Side.Retries); err != nil {
 			a.Log.Error("Failed to submit transaction", zap.Error(err))
 		}
 	}
@@ -144,7 +144,7 @@ func (a *State) SyncWithdrawalTxns() {
 			Status: btcbridge.SigningStatus_SIGNING_STATUS_BROADCASTED,
 		}
 
-		if err = a.SendSideTx(signingTx); err != nil {
+		if err = a.SendSideTxWithRetry(signingTx, a.Config.Side.Retries); err != nil {
 			a.Log.Error("Failed to submit transaction", zap.Error(err))
 		}
 	}
@@ -176,7 +176,7 @@ func (a *State) SubmitWithdrawalTx(blockhash *chainhash.Hash, tx *btcutil.Tx, tx
 		zap.Any("Tx", withdrawalTx),
 	)
 
-	return a.SendSideTx(withdrawalTx)
+	return a.SendSideTxWithRetry(withdrawalTx, a.Config.Side.Retries)
 }
 
 func (a *State) getVaultPrivKeys() (map[string]*secpv4.PrivateKey, error) {

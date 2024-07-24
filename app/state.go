@@ -63,7 +63,7 @@ type State struct {
 	txServiceClient txtypes.ServiceClient
 
 	// lock
-	mu sync.Mutex
+	mu sync.RWMutex
 }
 
 // NewState creates a new State object.
@@ -258,17 +258,30 @@ func (a *State) SendSideTx(msg sdk.Msg) error {
 		Mode:    txtypes.BroadcastMode_BROADCAST_MODE_SYNC, // Change as needed
 	})
 	if err != nil {
-		log.Fatalf("failed to broadcast tx: %v", err)
+		a.Log.Error("failed to broadcast tx", zap.String("error", err.Error()))
 		return err
 	}
 
 	if res.TxResponse.Code != 0 {
-		a.Log.Fatal("message failed", zap.String("error", res.TxResponse.RawLog))
+		a.Log.Error("message failed", zap.String("error", res.TxResponse.RawLog))
 		return fmt.Errorf("message failed: %s", res.TxResponse.RawLog)
 	}
 
 	fmt.Printf("Transaction broadcasted with TX hash: %s\n", res.TxResponse.TxHash)
 	return nil
+}
+
+func (a *State) SendSideTxWithRetry(msg sdk.Msg, retries int) error {
+	var err error
+
+	for i := 0; i < retries+1; i++ {
+		err = a.SendSideTx(msg)
+		if err == nil {
+			return nil
+		}
+	}
+
+	return err
 }
 
 func (a *State) InitLogger(configLogLevel string) error {
