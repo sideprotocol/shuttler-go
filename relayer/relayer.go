@@ -6,10 +6,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sideprotocol/shuttler/app"
+	zmqclient "github.com/ordishs/go-bitcoin"
 	"go.uber.org/zap"
 
-	zmqclient "github.com/ordishs/go-bitcoin"
+	btcbridge "github.com/sideprotocol/side/x/btcbridge/types"
+
+	"github.com/sideprotocol/shuttler/app"
 )
 
 func Start(a *app.State) {
@@ -47,6 +49,7 @@ func Start(a *app.State) {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
 	go handleWithdrawalTxnsLoop(a)
+	go handlePastVaultTxsLoop(a)
 
 	for {
 		select {
@@ -69,6 +72,35 @@ func handleWithdrawalTxnsLoop(a *app.State) {
 		a.SyncWithdrawalTxns()
 
 		time.Sleep(6 * time.Second)
+	}
+}
+
+func handlePastVaultTxsLoop(a *app.State) {
+	for {
+		requests, err := a.QuerySigningRequests(btcbridge.SigningStatus_SIGNING_STATUS_BROADCASTED)
+		if err != nil {
+			continue
+		}
+
+		if len(requests) == 0 {
+			continue
+		}
+
+		pendingBlockHeight, err := a.GetBtcBlockHeightByTx(requests[0].Txid)
+		if err != nil {
+			continue
+		}
+
+		res, err := a.QueryChainTip()
+		if err != nil {
+			continue
+		}
+
+		if pendingBlockHeight >= int32(res.Height)-a.GetParams().Confirmations {
+			return
+		}
+
+		a.ScanVaultTx(pendingBlockHeight+a.GetParams().GetConfirmations(), true)
 	}
 }
 

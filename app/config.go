@@ -80,7 +80,7 @@ func defaultConfig(network string) *Config {
 			Sender:    "",
 			ChainID:   "devnet",
 			Gas:       2000000,
-			Retries:   5,
+			Retries:   0,
 		},
 	}
 }

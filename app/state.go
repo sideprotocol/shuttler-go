@@ -9,6 +9,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -126,6 +127,10 @@ func (a *State) GetChainCfg() *chaincfg.Params {
 	return &chaincfg.MainNetParams
 }
 
+func (a *State) GetParams() *btclightclient.Params {
+	return a.params
+}
+
 // Query Light Client Chain Tip
 func (a *State) QueryChainTip() (*btclightclient.QueryChainTipResponse, error) {
 	// Timeout context for our queries
@@ -158,6 +163,44 @@ func (a *State) QueryAndCheckLightClientPermission() (*btclightclient.QueryParam
 
 	a.params = &res.Params
 	return res, nil
+}
+
+func (a *State) QuerySigningRequests(status btclightclient.SigningStatus) ([]*btclightclient.BitcoinSigningRequest, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
+	res, err := a.grpcQueryClient.QuerySigningRequest(ctx, &btclightclient.QuerySigningRequestRequest{
+		Status: status,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return res.Requests, nil
+}
+
+func (a *State) GetBtcBlockHeightByTx(txid string) (int32, error) {
+	txHash, err := chainhash.NewHashFromStr(txid)
+	if err != nil {
+		return 0, err
+	}
+
+	tx, err := a.rpc.GetRawTransactionVerbose(txHash)
+	if err != nil {
+		return 0, err
+	}
+
+	blockHash, err := chainhash.NewHashFromStr(tx.BlockHash)
+	if err != nil {
+		return 0, err
+	}
+
+	blockHeader, err := a.rpc.GetBlockHeaderVerbose(blockHash)
+	if err != nil {
+		return 0, err
+	}
+
+	return blockHeader.Height, nil
 }
 
 // Query Sequence of Side Account
@@ -258,12 +301,12 @@ func (a *State) SendSideTx(msg sdk.Msg) error {
 		Mode:    txtypes.BroadcastMode_BROADCAST_MODE_SYNC, // Change as needed
 	})
 	if err != nil {
-		a.Log.Error("failed to broadcast tx", zap.String("error", err.Error()))
+		a.Log.Fatal("failed to broadcast tx", zap.String("error", err.Error()))
 		return err
 	}
 
 	if res.TxResponse.Code != 0 {
-		a.Log.Error("message failed", zap.String("error", res.TxResponse.RawLog))
+		a.Log.Fatal("message failed", zap.String("error", res.TxResponse.RawLog))
 		return fmt.Errorf("message failed: %s", res.TxResponse.RawLog)
 	}
 

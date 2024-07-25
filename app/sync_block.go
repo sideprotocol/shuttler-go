@@ -214,7 +214,7 @@ func (a *State) SubmitBlock(blocks []*btcjson.GetBlockHeaderVerboseResult) {
 			panic(err)
 		}
 
-		a.ScanVaultTx(block.Height)
+		a.ScanVaultTx(block.Height, false)
 	}
 }
 
@@ -222,7 +222,7 @@ func (a *State) SubmitBlock(blocks []*btcjson.GetBlockHeaderVerboseResult) {
 // Check if the transaction is a deposit/withdraw transaction
 // If it is, submit the transaction to the sidechain
 // This block should be confirmed
-func (a *State) ScanVaultTx(current int32) error {
+func (a *State) ScanVaultTx(current int32, force bool) error {
 
 	height := current - a.params.Confirmations
 	if height == current {
@@ -243,7 +243,7 @@ func (a *State) ScanVaultTx(current int32) error {
 	// check if the block is already confirmed
 	// if not, return, because sidechain is instant finality,
 	// have to wait for the block to be confirmed
-	if height < int32(lightClientTip.Height)-a.params.Confirmations {
+	if !force && height < int32(lightClientTip.Height)-a.params.Confirmations {
 		return nil
 	}
 
